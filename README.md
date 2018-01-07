@@ -28,7 +28,7 @@ To achieve thoses goals this library depends on :
 
  - _current_: a json file containing the current version and description
 
-```json
+```js
 {
     "version": "1", // repository version
     "current": {
@@ -40,7 +40,7 @@ To achieve thoses goals this library depends on :
 
  - _versions_
 
- ```json
+ ```js
 {
     "version": "1", // repository version
     "versions": [   // complete list of versions in the repository
@@ -55,7 +55,7 @@ To achieve thoses goals this library depends on :
 
  - _packages_
 
-```json
+```js
 {
     "version": "1", // repository version
     "packages": [   // complete list of packages in the repository
@@ -73,7 +73,7 @@ To achieve thoses goals this library depends on :
 
 A package metadata is both a set of operation to apply a package and a description of the resulting state (ie. the workspace state can be checked with any package metadata leading to the expected version)
 
-```json
+```js
 {
     "version": "1", // repository version
     "package": {
