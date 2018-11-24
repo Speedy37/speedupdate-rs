@@ -150,12 +150,12 @@ impl ApplyGuard {
 }
 
 #[cfg(unix)]
-fn check_permission(file: &fs::File, exe: bool) -> io::Result<()> {
+pub(crate) fn check_permission(file: &fs::File, exe: bool) -> io::Result<()> {
   use std::os::unix::fs::PermissionsExt;
   if exe {
     let mut perms = file.metadata()?.permissions();
     let mode = perms.mode();
-    if (mode & 0o111) == 0o111 {
+    if (mode & 0o111) != 0o111 {
       perms.set_mode(mode | 0o111);
       file.set_permissions(perms)?;
     }
@@ -164,7 +164,7 @@ fn check_permission(file: &fs::File, exe: bool) -> io::Result<()> {
 }
 
 #[cfg(not(unix))]
-fn check_permission(_file: &fs::File, _exe: bool) -> io::Result<()> {
+pub(crate) fn check_permission(_file: &fs::File, _exe: bool) -> io::Result<()> {
   Ok(())
 }
 

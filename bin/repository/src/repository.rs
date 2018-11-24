@@ -3,7 +3,7 @@ use futures_cpupool::{CpuFuture, CpuPool};
 use serde::Serialize;
 use serde_json;
 use sha1::Sha1;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -297,7 +297,7 @@ fn build_operations(
     let src_is_exe = (flags & (IS_EXE << 0)) > 0;
     let pre_is_dir = (flags & (IS_DIR << 4)) > 0;
     let pre_is_file = (flags & (IS_FILE << 4)) > 0;
-    let pre_is_exe = (flags & (IS_EXE << 4)) > 0;
+    let _pre_is_exe = (flags & (IS_EXE << 4)) > 0;
     let relative = relative.join(&file_name);
     let path = relative.to_str().unwrap();
     if pre_is_file && !src_is_file {

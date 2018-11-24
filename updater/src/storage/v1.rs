@@ -1,6 +1,5 @@
 use brotli::DecompressorWriter;
-use operation;
-use operation::FinalWriter;
+use operation::{self, check_permission, FinalWriter};
 use std::fs;
 use std::fs::File;
 use std::io;
@@ -232,25 +231,26 @@ impl operation::Operation for Operation {
         ref data_compression,
         final_size,
         ref final_sha1,
+        exe,
         ..
       } => {
         let tmp_path = file_manager.tmp_operation_path(index);
         let final_path = file_manager.dir().join(path);
-        let tmp_file = FinalWriter::new(
-          fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(&tmp_path)?,
-        );
+        let tmp_file = fs::OpenOptions::new()
+          .write(true)
+          .create(true)
+          .open(&tmp_path)?;
+        check_permission(&tmp_file, exe)?;
+        let writer = FinalWriter::new(tmp_file);
         Ok(Some(operation::ApplyGuard::new(
           data_size,
           decode_sha1_digest(data_sha1)?,
           final_size,
           decode_sha1_digest(final_sha1)?,
           final_path,
-          tmp_file.stats(),
+          writer.stats(),
           tmp_path,
-          decompressor(data_compression, tmp_file)?,
+          decompressor(data_compression, writer)?,
         )))
       }
       &Operation::Patch {
@@ -262,6 +262,7 @@ impl operation::Operation for Operation {
         ref final_sha1,
         ref patch_type,
         local_size,
+        exe,
         ..
       } => {
         let final_path = file_manager.dir().join(path);
@@ -280,22 +281,22 @@ impl operation::Operation for Operation {
           .write(true)
           .open(&final_path)?;
         let tmp_path = file_manager.tmp_operation_path(index);
-        let tmp_file = FinalWriter::new(
-          fs::OpenOptions::new()
-            .write(true)
-            .read(true)
-            .create(true)
-            .open(&tmp_path)?,
-        );
+        let tmp_file = fs::OpenOptions::new()
+          .write(true)
+          .read(true)
+          .create(true)
+          .open(&tmp_path)?;
+        check_permission(&tmp_file, exe)?;
+        let writer = FinalWriter::new(tmp_file);
         Ok(Some(operation::ApplyGuard::new(
           data_size,
           decode_sha1_digest(data_sha1)?,
           final_size,
           decode_sha1_digest(final_sha1)?,
           final_path,
-          tmp_file.stats(),
+          writer.stats(),
           tmp_path,
-          patch_applier(data_compression, patch_type, local_file, tmp_file)?,
+          patch_applier(data_compression, patch_type, local_file, writer)?,
         )))
       }
       &Operation::Check {
