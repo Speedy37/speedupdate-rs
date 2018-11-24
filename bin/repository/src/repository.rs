@@ -3,7 +3,7 @@ use futures_cpupool::{CpuFuture, CpuPool};
 use serde::Serialize;
 use serde_json;
 use sha1::Sha1;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -228,6 +228,18 @@ where
 
 const IS_DIR: u8 = 1;
 const IS_FILE: u8 = 2;
+const IS_EXE: u8 = 4;
+
+#[cfg(unix)]
+fn is_exe(_file_name: &str, metadata: &fs::Metadata) -> bool {
+  use std::os::unix::fs::PermissionsExt;
+  return metadata.permissions() & 0o444 > 0;
+}
+
+#[cfg(not(unix))]
+fn is_exe(file_name: &str, _metadata: &fs::Metadata) -> bool {
+  return file_name.starts_with(".exe");
+}
 
 fn ordered_dir_list(
   vec: &mut Vec<(OsString, u8)>,
@@ -238,14 +250,15 @@ fn ordered_dir_list(
     for entry in fs::read_dir(dir)? {
       let entry = entry?;
       let file_name = entry.file_name();
-      let file_type = match entry.file_type()? {
+      let metadata = entry.metadata()?;
+      let mut file_type = match metadata.file_type() {
         t if t.is_dir() => IS_DIR,
         t if t.is_file() => IS_FILE,
-        _ => Err(io::Error::new(
-          io::ErrorKind::Other,
-          "unsupported file type",
-        ))?,
+        _ => continue,
       };
+      if is_exe(&file_name.to_string_lossy(), &metadata) {
+        file_type |= IS_EXE;
+      }
       match vec.binary_search_by_key(&&file_name, |&(ref file_name, _)| file_name) {
         Ok(index) => vec[index].1 |= file_type << offset,
         Err(index) => vec.insert(index, (file_name, file_type << offset)),
@@ -276,13 +289,15 @@ fn build_operations(
   let mut vec = Vec::new();
 
   ordered_dir_list(&mut vec, src, 0)?;
-  ordered_dir_list(&mut vec, pre, 2)?;
+  ordered_dir_list(&mut vec, pre, 4)?;
 
   for (file_name, flags) in vec {
     let src_is_dir = (flags & (IS_DIR << 0)) > 0;
     let src_is_file = (flags & (IS_FILE << 0)) > 0;
-    let pre_is_dir = (flags & (IS_DIR << 2)) > 0;
-    let pre_is_file = (flags & (IS_FILE << 2)) > 0;
+    let src_is_exe = (flags & (IS_EXE << 0)) > 0;
+    let pre_is_dir = (flags & (IS_DIR << 4)) > 0;
+    let pre_is_file = (flags & (IS_FILE << 4)) > 0;
+    let pre_is_exe = (flags & (IS_EXE << 4)) > 0;
     let relative = relative.join(&file_name);
     let path = relative.to_str().unwrap();
     if pre_is_file && !src_is_file {
@@ -334,7 +349,7 @@ fn build_operations(
             data_sha1,
             final_size,
             final_sha1,
-            exe: false,
+            exe: src_is_exe,
           },
           Some(tmp_path),
         ))
@@ -358,7 +373,7 @@ fn build_operations(
               path,
               local_size,
               local_sha1,
-              exe: false,
+              exe: src_is_exe,
             },
             None,
           ))
@@ -411,7 +426,7 @@ fn build_operations(
               local_sha1,
               final_size,
               final_sha1,
-              exe: false,
+              exe: src_is_exe,
             },
             Some(tmp_path),
           ))
