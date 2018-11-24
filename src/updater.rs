@@ -22,6 +22,7 @@ pub enum Error {
   RemoteRepository(RepositoryError),
   IoError(io::Error),
   NoPath,
+  RecoveryFailed,
   ApplyError(ApplyError),
 }
 
@@ -64,6 +65,7 @@ impl<'a> ProgressionStream<'a> {
       .skip_while(|&&(idx, _)| idx < applied.package_idx)
       .cloned()
       .collect();
+
     file_manager.remove_tmp_dir()?;
     file_manager.create_update_dirs()?;
 
@@ -146,6 +148,7 @@ impl fmt::Display for Error {
   fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
     match self {
       &Error::NoPath => write!(fmt, "no update path"),
+      &Error::RecoveryFailed => write!(fmt, "recovery failed"),
       &Error::IoError(ref err) => err.fmt(fmt),
       &Error::RemoteRepository(ref err) => err.fmt(fmt),
       &Error::ApplyError(ref err) => err.fmt(fmt),
@@ -167,19 +170,20 @@ pub fn update<'a, R>(
 where
   R: RemoteRepository,
 {
+  info!("update to {}", goal_version);
   let workspace_state = workspace.state().clone();
   if let State::Stable { ref version } = workspace_state {
     if version == goal_version {
       return Box::new(stream::empty());
     }
   }
-
   let global_progression = Rc::new(RefCell::new(GlobalProgression::new()));
   let shared_state = Rc::new(RefCell::new(StateUpdating::new(
     String::new(),
     String::new(),
   )));
   let shared_state_r = shared_state.clone();
+  let shared_state_s = shared_state.clone();
   let shared_state_c = shared_state.clone();
   let global_progression_r = global_progression.clone();
   let global_progression_c = global_progression.clone();
@@ -220,7 +224,7 @@ where
   }).flatten_stream();
 
   let write_state = Rc::new(RefCell::new(move || -> Result<(), Error> {
-    let state = &*shared_state_c.borrow();
+    let state = &*shared_state_s.borrow();
     let global_progression = &*global_progression_c.borrow();
     let state = if state.failures.len() == 0
       && global_progression.packages.start == global_progression.packages.end
@@ -235,11 +239,18 @@ where
     Ok(())
   }));
   let write_state_c = write_state.clone();
-
   let commit_stream = future::lazy(
     move || -> Result<stream::Empty<Rc<RefCell<GlobalProgression>>, Error>, Error> {
       (&mut *write_state_c.borrow_mut())()?;
-      Ok(stream::empty())
+      let state = &*shared_state_c.borrow();
+      if state.failures.len() == 0 {
+        info!("update to {} succeeded", goal_version);
+        Ok(stream::empty())
+      }
+      else  {
+        error!("update to {} failed", goal_version);
+        Err(Error::RecoveryFailed)
+      }
     },
   ).flatten_stream();
 
@@ -279,6 +290,14 @@ where
     .and_then(move |packages| {
       let (path, first_package_state) =
         shortest_path(initial_state, packages.as_slice(), goal_version)?;
+
+      info!(
+        "found update path {:?}",
+        path
+          .iter()
+          .map(|package| package.package_metadata_name())
+          .collect::<Vec<_>>()
+      );
       let futures: Vec<_> = path
         .iter()
         .map(move |package| repository.package_metadata(&package.package_metadata_name()))
@@ -334,6 +353,12 @@ where
           let state = &mut *u_state.borrow_mut();
           state.from = package_metadata.from().to_owned();
           state.to = package_metadata.to().to_owned();
+          debug!(
+            "begin update package = {}, available = {:?}, applied = {:?}",
+            package_metadata.package_data_name(),
+            state.available,
+            state.applied
+          );
         }
         let operations: Vec<(usize, v1::Operation)> = package_metadata
           .iter()
@@ -351,6 +376,7 @@ where
 
         // Write package check file
         {
+          file_manager.create_update_dirs()?;
           let check_file = fs::File::create(file_manager.check_path())?;
           let check_operations: Vec<v1::Operation> = package_metadata
             .iter()
@@ -379,6 +405,10 @@ where
         match res {
           Ok(Some(progression)) => *global_progression.borrow_mut() += &progression,
           Ok(None) => {
+            debug!("end update package");
+            let mut state = &mut *n_state.borrow_mut();
+            state.available = UpdatePosition::new();
+            state.applied = UpdatePosition::new();
             let global_progression = &mut *global_progression.borrow_mut();
             global_progression.packages.start += 1;
           }
@@ -388,9 +418,10 @@ where
             let global_progression = &mut *global_progression.borrow_mut();
             global_progression.failed_files += 1;
           }
-          Err(x) => {
+          Err(err) => {
+            error!("update failed: {}", err);
             // update failed
-            return Err(x);
+            return Err(err);
           }
         };
         Ok(global_progression.clone())

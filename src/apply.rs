@@ -174,9 +174,10 @@ pub fn apply_package(
         let res = operation
           .begin_apply(&file_manager, idx, &update_options)
           .map_err(|err| {
-            println!("begin_apply failed {} {:?}", operation.path(), err);
+            warn!("begin apply operation#{} {} failed: {}", idx, operation.path(), err);
             err
           })?;
+        debug!("begin apply operation#{} {}", idx, operation.path());
         if let Some(mut applier) = res {
           let mut buffer = [0u8; BUFFER_SIZE];
 
@@ -185,7 +186,10 @@ pub fn apply_package(
           let data_file_path = file_manager.download_operation_path(idx);
           {
             let mut total_output_bytes = 0;
-            let mut data_file = OpenOptions::new().read(true).open(&data_file_path)?;
+            let mut data_file = OpenOptions::new().read(true).open(&data_file_path).map_err(|err| {
+              warn!("apply operation#{} {} failed: unable to open data file ({})", idx, operation.path(), err);
+              err
+            })?;
             let mut remaining = applier.data_size();
             while remaining > 0 {
               let available = wait_until(&t_available, |available| applied_data < *available)?;
@@ -196,8 +200,14 @@ pub fn apply_package(
               };
 
               let max_read = cmp::min(available, buffer.len() as u64) as usize;
-              let read = data_file.read(&mut buffer[0..max_read])?;
-              applier.write(&buffer[0..read])?;
+              let read = data_file.read(&mut buffer[0..max_read]).map_err(|err| {
+                warn!("apply operation#{} {} failed: unable to read data file ({})", idx, operation.path(), err);
+                err
+              })?;
+              applier.write_all(&buffer[0..read]).map_err(|err| {
+                warn!("apply operation#{} {} failed: unable to write final file ({})", idx, operation.path(), err);
+                err
+              })?;
               let read = read as u64;
               applied_data.byte_idx += read;
               remaining -= read;
@@ -211,7 +221,7 @@ pub fn apply_package(
               total_output_bytes = new_total_output_bytes;
             }
             applier.commit().map_err(|err| {
-              println!("commit failed {} {:?}", operation.path(), err);
+              warn!("apply operation#{} {} failed: unable to commit changes ({})", idx, operation.path(), err);
               err
             })?;
           }
@@ -237,6 +247,7 @@ pub fn apply_package(
     }
     t_done.store(1, Ordering::Relaxed);
     notify_end(&terr_applied);
+    debug!("end apply");
   });
 
   ApplyStream {

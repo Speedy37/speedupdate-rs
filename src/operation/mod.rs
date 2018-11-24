@@ -41,14 +41,33 @@ where
   T: io::Write,
 {
   fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+    let written = self.inner.write(buf)?;
     let mut stats = self.stats.borrow_mut();
-    stats.sha1.update(buf);
-    stats.written_bytes += buf.len() as u64;
-    self.inner.write(buf)
+    stats.sha1.update(&buf[0..written]);
+    stats.written_bytes += written as u64;
+    Ok(written)
   }
 
   fn flush(&mut self) -> io::Result<()> {
     self.inner.flush()
+  }
+}
+
+impl<T> io::Seek for FinalWriter<T>
+where
+  T: io::Seek,
+{
+  fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+    self.inner.seek(pos)
+  }
+}
+
+impl<T> io::Read for FinalWriter<T>
+where
+  T: io::Read,
+{
+  fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    self.inner.read(buf)
   }
 }
 
@@ -95,9 +114,9 @@ impl ApplyGuard {
     self.tmp_stats.borrow().written_bytes
   }
 
-  pub fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+  pub fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
     self.data_sha1.update(buf);
-    self.decoder.as_mut().unwrap().write(buf)
+    self.decoder.as_mut().unwrap().write_all(buf)
   }
 
   pub fn commit(&mut self) -> io::Result<()> {

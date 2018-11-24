@@ -1,5 +1,6 @@
 use std::ops::Range;
 use std::io;
+use std::io::{Read, Seek, Write};
 use std::fs;
 use std::fs::File;
 use operation;
@@ -8,6 +9,7 @@ use storage;
 use brotli::DecompressorWriter;
 use workspace::WorkspaceFileManager;
 use updater::UpdateOptions;
+use vcdiff_rs::{DecoderState, VCDiffDecoder};
 use BUFFER_SIZE;
 
 mod u64_str {
@@ -255,10 +257,14 @@ impl operation::Operation for Operation {
             ),
           ));
         }
-
+        let local_file = fs::OpenOptions::new()
+          .read(true)
+          .write(true)
+          .open(&final_path)?;
         let tmp_path = file_manager.tmp_operation_path(index);
         let tmp_file = FinalWriter::new(fs::OpenOptions::new()
           .write(true)
+          .read(true)
           .create(true)
           .open(&tmp_path)?);
         Ok(Some(operation::ApplyGuard::new(
@@ -269,7 +275,7 @@ impl operation::Operation for Operation {
           final_path,
           tmp_file.stats(),
           tmp_path,
-          patch_applier(data_compression, patch_type, tmp_file)?,
+          patch_applier(data_compression, patch_type, local_file, tmp_file)?,
         )))
       }
       &Operation::Check {
@@ -345,13 +351,36 @@ fn decompressor(
   }
 }
 
+struct VCDiffDecoderWriter<ORIGINAL: Read + Seek, TARGET: Write + Read + Seek> {
+  decoder: VCDiffDecoder<ORIGINAL, TARGET>,
+  state: DecoderState,
+}
+
+impl<ORIGINAL: Read + Seek, TARGET: Write + Read + Seek> Write
+  for VCDiffDecoderWriter<ORIGINAL, TARGET> {
+  fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+    self.state = self.decoder.decode(buf)?;
+    Ok(buf.len())
+  }
+
+  fn flush(&mut self) -> io::Result<()> {
+    Ok(())
+  }
+}
+
 fn patch_applier(
   decompressor_name: &str,
   patcher_name: &str,
+  local_file: File,
   tmp_file: FinalWriter<File>,
 ) -> Result<Box<io::Write>, io::Error> {
   if decompressor_name == "brotli" && patcher_name == "vcdiff" {
-    Ok(Box::new(DecompressorWriter::new(tmp_file, BUFFER_SIZE)))
+    let patcher = VCDiffDecoderWriter {
+      decoder: VCDiffDecoder::new(local_file, tmp_file, BUFFER_SIZE),
+      state: DecoderState::WantMoreInputOrDone,
+    };
+    let decompressor = DecompressorWriter::new(patcher, BUFFER_SIZE);
+    Ok(Box::new(decompressor))
   } else {
     Err(io::Error::new(io::ErrorKind::Other, "not implemented!"))
   }

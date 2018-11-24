@@ -1,4 +1,4 @@
-use futures::{stream, Stream};
+use futures::{future, stream, Future, Stream};
 use operation;
 use operation::Operation;
 use repository::RemoteRepository;
@@ -56,13 +56,14 @@ where
     start_position.byte_idx,
     500 * 1024,
   );
+  debug!("download ranges: {:?}", ranges);
   let mut operations_iter = operations.into_iter().filter_map(move |(package_idx, o)| {
     if let Some(range) = o.range() {
       let file = OpenOptions::new()
         .write(true)
         .create(true)
         .open(file_manager.download_operation_path(package_idx));
-      Some((package_idx, range, file))
+      Some((package_idx, range, file, o))
     } else {
       None
     }
@@ -84,7 +85,14 @@ where
       let mut total_bytes = 0;
       loop {
         if current_operation.is_none() {
-          if let Some((package_idx, range, file)) = operations_iter.next() {
+          if let Some((package_idx, range, file, operation)) = operations_iter.next() {
+            debug!(
+              "begin download operation#{} {} [{}, {})",
+              package_idx,
+              operation.path(),
+              range.start,
+              range.end
+            );
             let mut file = file?;
             let pos = if package_idx == start_position.package_idx {
               start_position.byte_idx
@@ -130,5 +138,10 @@ where
       Ok((position.clone(), total_bytes))
     });
 
-  Box::new(s)
+  let done_stream = future::lazy(|| {
+    debug!("end download");
+    Ok(stream::empty())
+  }).flatten_stream();
+
+  Box::new(s.chain(done_stream))
 }

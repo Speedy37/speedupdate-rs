@@ -1,23 +1,40 @@
-use std::fs;
-use std::ffi::OsString;
-use std::io::{self, Read, Write};
-use std::path::{Path, PathBuf};
-use storage::{self, Package, PackageMetadata, Packages, Versions, v1};
-use futures::{future, Future, Stream};
-use futures_cpupool::{CpuFuture, CpuPool};
-use updater::{update, UpdateOptions};
-use workspace::Workspace;
-use repository::local::LocalRepository;
-use tokio_core::reactor::Core;
-use sha1::Sha1;
 use brotli::CompressorWriter;
+use futures_cpupool::{CpuFuture, CpuPool};
+use futures::{future, Future, Stream};
 use operation::FinalWriter;
+use repository::local::LocalRepository;
 use serde_json;
 use serde::Serialize;
+use sha1::Sha1;
+use std::ffi::OsString;
+use std::fs;
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
+use std::process;
+use storage::{self, Package, PackageMetadata, Packages, Versions, v1};
+use tokio_core::reactor::Core;
+use updater::{update, UpdateOptions};
+use workspace::Workspace;
 use BUFFER_SIZE;
 
 pub struct Repository {
   dir: PathBuf,
+}
+
+fn compute_size_and_sha1(path: &Path) -> io::Result<(u64, String)> {
+  let size = fs::metadata(&path)?.len();
+  let sha1 = {
+    let mut buffer = [0u8; BUFFER_SIZE];
+    let mut sha1 = Sha1::new();
+    let mut file = fs::File::open(&path)?;
+    let mut read = file.read(&mut buffer)?;
+    while read > 0 {
+      sha1.update(&buffer[0..read]);
+      read = file.read(&mut buffer)?;
+    }
+    sha1.digest().to_string()
+  };
+  Ok((size, sha1))
 }
 
 const V1_VERSION: &str = "version";
@@ -77,6 +94,12 @@ impl Repository {
     description: &str,
     previous_version: Option<&str>,
   ) -> io::Result<()> {
+    info!(
+      "add_package from {} to {{ path = {:?}, version = {} }}",
+      previous_version.unwrap_or("nothing"),
+      source_directory,
+      version
+    );
     let previous_directory = build_directory.join("previous");
     let pre = match previous_version {
       Some(previous_version) => {
@@ -84,16 +107,20 @@ impl Repository {
         let mut workspace = Workspace::new(&previous_directory);
         let mut core = Core::new().unwrap();
         let remote = LocalRepository::new(self.dir.clone());
-        let update_stream = update(
-          &mut workspace,
-          &remote,
-          previous_version,
-          UpdateOptions { check: false },
-        );
-        let update_future = update_stream.for_each(move |_| Ok(()));
-        core
-          .run(update_future)
-          .map_err(|_| io::Error::new(io::ErrorKind::Other, "unable to restore previous version"))?;
+        {
+          let update_stream = update(
+            &mut workspace,
+            &remote,
+            previous_version,
+            UpdateOptions { check: false },
+          );
+          let update_future = update_stream.for_each(move |_| Ok(()));
+          core.run(update_future).map_err(|err| {
+            println!("err= {:?}", err);
+            io::Error::new(io::ErrorKind::Other, "unable to restore previous version")
+          })?;
+        }
+        fs::remove_dir_all(workspace.file_manager().update_dir())?;
         Some(Path::new(&previous_directory))
       }
       _ => None,
@@ -221,7 +248,7 @@ fn ordered_dir_list(
         ))?,
       };
       match vec.binary_search_by_key(&&file_name, |&(ref file_name, _)| file_name) {
-        Ok(index) => vec[index].1 &= file_type << offset,
+        Ok(index) => vec[index].1 |= file_type << offset,
         Err(index) => vec.insert(index, (file_name, file_type << offset)),
       };
     }
@@ -237,6 +264,8 @@ fn build_operations(
   pre: Option<&Path>,
   relative: &Path,
 ) -> io::Result<()> {
+  let brotli_exe: Option<&str> = Some("G:/Development/GitHub/brotli.exe");
+  let vcdiff_exe: Option<&str> = Some("G:/Development/GitHub/xdelta3.exe");
   let mut vec = Vec::new();
 
   ordered_dir_list(&mut vec, src, 0)?;
@@ -247,50 +276,48 @@ fn build_operations(
     let src_is_file = (flags & (IS_FILE << 0)) > 0;
     let pre_is_dir = (flags & (IS_DIR << 2)) > 0;
     let pre_is_file = (flags & (IS_FILE << 2)) > 0;
-    let relative = relative.join(file_name);
+    let relative = relative.join(&file_name);
     let path = relative.to_str().unwrap();
-    if pre_is_dir && !src_is_dir {
-      let path = path.to_owned();
-      futures.push(pool.spawn_fn(move || Ok((v1::Operation::RmDir { path }, None))));
-      // rm dir
-    }
     if pre_is_file && !src_is_file {
       // rm file
+      debug!("rm file {}", path);
       let path = path.to_owned();
       futures.push(pool.spawn_fn(move || Ok((v1::Operation::Rm { path }, None))));
     }
     if src_is_dir && !pre_is_dir {
       // mk dir
+      debug!("mk dir {}", path);
       let path = path.to_owned();
       futures.push(pool.spawn_fn(move || Ok((v1::Operation::MkDir { path }, None))));
     }
     if src_is_file && !pre_is_file {
       // add file
       let path = path.to_owned();
-      let mut src_file = fs::File::open(&src.unwrap().join(&path))?;
+      let src_path = src.unwrap().join(&file_name);
       let tmp_path = tmp_dir.join(format!("op_{}.data", futures.len()));
       futures.push(pool.spawn_fn(move || {
-        let mut buffer = [0u8; BUFFER_SIZE];
-        let mut sha1 = Sha1::new();
-        let mut final_size = 0u64;
-        let mut read = src_file.read(&mut buffer)?;
+        debug!("computing final sha1 {}", path);
+        let (final_size, final_sha1) = compute_size_and_sha1(&src_path)?;
+        let src_file = fs::File::open(&src_path)?;
         let tmp_file = fs::File::create(&tmp_path)?;
-        let tmp_file = FinalWriter::new(tmp_file);
-        let stats = tmp_file.stats.clone();
-        {
-          let mut compressor = CompressorWriter::new(tmp_file, BUFFER_SIZE, 9, 22);
-          while read > 0 {
-            final_size += read as u64;
-            sha1.update(&buffer[0..read]);
-            compressor.write(&buffer[0..read])?;
-            read = src_file.read(&mut buffer)?;
-          }
+        let mut brotli = process::Command::new(brotli_exe.unwrap())
+          .arg("-9") // write on standard output
+          .arg("--stdout") // write on standard output
+          .arg("-") // read standard input
+          .stdin(process::Stdio::from(src_file))
+          .stdout(process::Stdio::from(tmp_file))
+          .stderr(process::Stdio::inherit())
+          .spawn()?;
+        if !brotli.wait()?.success() {
+          Err(io::Error::new(
+            io::ErrorKind::Other,
+            "failed to encode date status code",
+          ))?;
         }
-        let final_sha1 = sha1.digest().to_string();
-        let (data_size, data_sha1) = {
-          let stats = &*stats.borrow();
-          (stats.written_bytes, stats.sha1.digest().to_string())
-        };
+        debug!("done brotli data {}", path);
+        debug!("computing data sha1 {}", path);
+        let (data_size, data_sha1) = compute_size_and_sha1(&tmp_path)?;
+        debug!("added {} {} -- brotli --> {}", path, final_size, data_size);
         Ok((
           v1::Operation::Add {
             path,
@@ -307,16 +334,90 @@ fn build_operations(
     }
     if src_is_file && pre_is_file {
       // patch || check file
+      let path = path.to_owned();
+      let src_path = src.unwrap().join(&file_name);
+      let pre_path = pre.unwrap().join(&file_name);
+      let tmp_path = tmp_dir.join(format!("op_{}.data", futures.len()));
+      futures.push(pool.spawn_fn(move || {
+        debug!("computing previous sha1 {}", path);
+        let (local_size, local_sha1) = compute_size_and_sha1(&pre_path)?;
+        debug!("computing final sha1 {}", path);
+        let (final_size, final_sha1) = compute_size_and_sha1(&src_path)?;
+        if final_size == local_size && final_sha1 == local_sha1 {
+          debug!("check {}", path);
+          Ok((
+            v1::Operation::Check {
+              path,
+              local_size,
+              local_sha1,
+            },
+            None,
+          ))
+        }
+        else {
+          debug!("computing delta {}", path);
+          let tmp_file = fs::File::create(&tmp_path)?;
+          let mut vcdiff = process::Command::new(vcdiff_exe.unwrap())
+            .arg("-e") // compress
+            .arg("-c") // use stdout
+            .arg("-s")
+            .arg(&pre_path)
+            .arg(&src_path)
+            .stdout(process::Stdio::piped())
+            .stderr(process::Stdio::inherit())
+            .spawn()?;
+          let mut brotli = process::Command::new(brotli_exe.unwrap())
+            .arg("-9") // write on standard output
+            .arg("--stdout") // write on standard output
+            .arg("-") // read standard input
+            .stdin(process::Stdio::from(vcdiff.stdout.take().unwrap()))
+            .stdout(process::Stdio::from(tmp_file))
+            .stderr(process::Stdio::inherit())
+            .spawn()?;
+          if !vcdiff.wait()?.success() {
+            debug!("vcdiff failed {:?} {:?} {:?}", src_path, pre_path, tmp_path);
+            Err(io::Error::new(
+              io::ErrorKind::Other,
+              "failed to vcdiff date status code",
+            ))?;
+          }
+          debug!("done vcdiff data {}", path);
+          if !brotli.wait()?.success() {
+            Err(io::Error::new(
+              io::ErrorKind::Other,
+              "failed to encode date status code",
+            ))?;
+          }
+          debug!("done brotli data {}", path);
+          debug!("computing data sha1 {}", path);
+          let (data_size, data_sha1) = compute_size_and_sha1(&tmp_path)?;
+          Ok((
+            v1::Operation::Patch {
+              path,
+              data_compression: String::from("brotli"),
+              patch_type: String::from("vcdiff"),
+              data_offset: 0,
+              data_size,
+              data_sha1,
+              local_size,
+              local_sha1,
+              final_size,
+              final_sha1,
+            },
+            Some(tmp_path),
+          ))
+        }
+      }));
     }
 
     if src_is_dir || pre_is_dir {
       let src = if src_is_dir {
-        Some(src.unwrap().join(&path))
+        Some(src.unwrap().join(&file_name))
       } else {
         None
       };
       let pre = if pre_is_dir {
-        Some(pre.unwrap().join(&path))
+        Some(pre.unwrap().join(&file_name))
       } else {
         None
       };
@@ -335,6 +436,13 @@ fn build_operations(
         &relative,
       )?;
     }
+
+    if pre_is_dir && !src_is_dir {
+      debug!("rm dir {}", path);
+      let path = path.to_owned();
+      futures.push(pool.spawn_fn(move || Ok((v1::Operation::RmDir { path }, None))));
+      // rm dir
+    }
   }
 
   Ok(())
@@ -346,21 +454,79 @@ mod tests {
   use std::path::{Path, PathBuf};
   use std::io;
   use std::fs;
+  use log::{self, Level, Metadata, Record};
+
+  struct SimpleLogger;
+
+  impl log::Log for SimpleLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+      true
+    }
+
+    fn log(&self, record: &Record) {
+      if self.enabled(record.metadata()) {
+        println!("{} - {}", record.level(), record.args());
+      }
+    }
+
+    fn flush(&self) {}
+  }
+  static LOGGER: SimpleLogger = SimpleLogger;
 
   #[test]
   fn package() {
-    let mut repository = Repository::new(PathBuf::from("test_repository"));
-    fs::create_dir_all("build_repository");
-    fs::create_dir_all("test_repository");
+    log::set_logger(&LOGGER);
+    log::set_max_level(log::LevelFilter::Debug);
+
+    let repository_dir = Path::new("G:/Development/SGN/deploy/pre-release/win64/launcher");
+    let data_dir = Path::new("G:/Development/SGN/deploy/pre-release-src/win64/launcher/v4.0.4");
+    let build_dir = Path::new("G:/Development/SGN/deploy/pre-release/win64/.build");
+    let mut repository = Repository::new(repository_dir.to_owned());
+    fs::create_dir_all(&build_dir);
+    repository
+      .add_package(build_dir, data_dir, "v4.0.4", "", None)
+      .expect("package to succeed");
+    /*
+    let base_path = Path::new("target-tst");
+    let data_path = Path::new("tst");
+    let repository_dir = base_path.join("repository");
+    let build_dir = base_path.join("build");
+    fs::create_dir_all(&build_dir);
+    fs::create_dir_all(&build_dir.join("step1"));
+    fs::create_dir_all(&build_dir.join("step2"));
+    fs::create_dir_all(&build_dir.join("step3"));
+    fs::create_dir_all(&repository_dir);
+    let mut repository = Repository::new(repository_dir);
     repository.init().expect("init should not fail");
     repository
       .add_package(
-        Path::new("build_repository"),
-        Path::new("test"),
+        &build_dir.join("step1"),
+        &data_path.join("rev1"),
         "v1",
         "desc v1",
         None,
       )
       .expect("package to succeed");
+    repository
+      .add_package(
+        &build_dir.join("step2"),
+        &data_path.join("rev2"),
+        "v2",
+        "desc v2",
+        Some("v1"),
+      )
+      .expect("package 2 to succeed");
+
+    repository
+      .add_package(
+        &build_dir.join("step3"),
+        &data_path.join("rev2"),
+        "v3",
+        "desc v3",
+        Some("v2"),
+      )
+      .expect("package 3 to succeed");
+
+      */
   }
 }

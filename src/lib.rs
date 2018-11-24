@@ -4,12 +4,15 @@ extern crate futures;
 extern crate futures_cpupool;
 extern crate hyper;
 extern crate hyper_tls;
+#[macro_use]
+extern crate log;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
 extern crate sha1;
 extern crate tokio_core;
+extern crate vcdiff_rs;
 
 mod storage;
 mod operation;
@@ -44,6 +47,7 @@ pub fn update_workspace<F>(
 where
   F: FnMut(&GlobalProgression) -> bool,
 {
+  info!("update_workspace {} {} @ {}", workspace_path, repository_url, goal_version.unwrap_or("latest"));
   let mut core = Core::new().unwrap();
   let handle = core.handle();
   let repository = HttpsRepository::new(
@@ -62,7 +66,10 @@ where
     Box::new(
       repository
         .current_version()
-        .and_then(|c| Ok(c.version().to_owned())),
+        .and_then(|c| {
+          info!("latest = {}", c.version());
+          Ok(c.version().to_owned())
+        }),
     )
   };
   let mut effective_goal_version = String::new();

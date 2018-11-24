@@ -66,14 +66,26 @@ impl RemoteRepository for LocalRepository {
         file
           .seek(SeekFrom::Start(range.start))
           .map_err(Error::IoError)?;
-        let mut remaining = range.end - range.start;
+        let remaining = range.end - range.start;
+        let mut data = Vec::with_capacity(remaining as usize);
+        data.resize(remaining as usize, 0);
+        file.read_exact(&mut data).map_err(Error::IoError)?;
+        let stream = stream::once(Ok(Bytes::from(&data[..])));
+        /*
+        let mut buffer = [0u8; BUFFER_SIZE];
         let stream = stream::poll_fn(move || -> Poll<Option<Bytes>, io::Error> {
-          let mut buf = BytesMut::with_capacity(BUFFER_SIZE);
-          let read = cmp::min(buf.len() as u64, remaining);
+          let read = cmp::min(buffer.len() as u64, remaining);
           remaining -= read;
-          file.read(&mut buf[0..read as usize])?;
-          Ok(Async::Ready(Some(buf.freeze())))
+          let read = file.read(&mut buffer[0..read as usize])?;
+          println!("poll data = {}", read);
+          Ok(Async::Ready(if read > 0 {
+            Some(Bytes::from(&buffer[0..read]))
+          }
+          else {
+            None
+          }))
         }).map_err(Error::IoError);
+        */
         Ok(stream)
       })
       .flatten_stream();
