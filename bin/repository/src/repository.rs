@@ -233,7 +233,7 @@ const IS_EXE: u8 = 4;
 #[cfg(unix)]
 fn is_exe(_file_name: &str, metadata: &fs::Metadata) -> bool {
   use std::os::unix::fs::PermissionsExt;
-  return metadata.permissions() & 0o444 > 0;
+  return metadata.permissions().mode() & 0o111 > 0;
 }
 
 #[cfg(not(unix))]

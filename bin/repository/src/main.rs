@@ -16,10 +16,11 @@ mod repository;
 use clap::{crate_authors, crate_name, crate_version, App, Arg, SubCommand};
 use std::fs;
 use std::path::Path;
+use std::process;
 
 use repository::Repository;
 
-fn main() -> Result<(), ()> {
+fn main() {
   env_logger::init();
 
   let app_m = App::new(crate_name!())
@@ -49,7 +50,7 @@ fn main() -> Result<(), ()> {
         ),
     ).get_matches();
 
-  match app_m.subcommand() {
+  let r = match app_m.subcommand() {
     ("init", Some(sub_m)) => {
       let path = sub_m.value_of("PATH").expect("Repository path");
       repository_init(path)
@@ -60,14 +61,19 @@ fn main() -> Result<(), ()> {
       let version = sub_m.value_of("VERSION").expect("Path version");
       repository_add_package(path, data, version)
     }
-    (cmd, _) => Err(format!("unknown command: {}", cmd)),
-  }.map(|msg| {
-    println!("{}", msg);
-    ()
-  }).map_err(|msg| {
-    println!("{}", msg);
-    ()
-  })
+    (cmd, _) => Err(app_m.usage().to_owned()),
+  };
+  let exit_code = match r {
+    Ok(msg) => {
+      println!("{}", msg);
+      0i32
+    }
+    Err(msg) => {
+      println!("{}", msg);
+      1i32
+    }
+  };
+  process::exit(exit_code);
 }
 
 fn repository_init(path: &str) -> Result<String, String> {
