@@ -5,7 +5,6 @@ authors = ["Vincent Rouillé <v-rouille@logitud.fr>"]
 
 [dependencies]
 update_system = { path = "../../" }
-clap = "2.29.0"
 
 [lib]
 crate-type = ["cdylib"]
