@@ -1,21 +1,24 @@
-use brotli::CompressorWriter;
-use futures_cpupool::{CpuFuture, CpuPool};
 use futures::{future, Future, Stream};
-use operation::FinalWriter;
-use repository::local::LocalRepository;
-use serde_json;
+use futures_cpupool::{CpuFuture, CpuPool};
 use serde::Serialize;
+use serde_json;
 use sha1::Sha1;
 use std::ffi::OsString;
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process;
-use storage::{self, Package, PackageMetadata, Packages, Versions, v1};
 use tokio_core::reactor::Core;
-use updater::{update, UpdateOptions};
-use workspace::Workspace;
-use BUFFER_SIZE;
+
+use updater::repository::local::LocalRepository;
+use updater::storage::{self, v1, Package, PackageMetadata, Packages, Versions};
+use updater::updater::{update, UpdateOptions};
+use updater::workspace::Workspace;
+use updater::BUFFER_SIZE;
+
+const V1_VERSION: &str = "version";
+const V1_VERSIONS: &str = "versions";
+const V1_PACKAGES: &str = "packages";
 
 pub struct Repository {
   dir: PathBuf,
@@ -36,10 +39,6 @@ fn compute_size_and_sha1(path: &Path) -> io::Result<(u64, String)> {
   };
   Ok((size, sha1))
 }
-
-const V1_VERSION: &str = "version";
-const V1_VERSIONS: &str = "versions";
-const V1_PACKAGES: &str = "packages";
 
 impl Repository {
   pub fn new(dir: PathBuf) -> Repository {
@@ -264,8 +263,16 @@ fn build_operations(
   pre: Option<&Path>,
   relative: &Path,
 ) -> io::Result<()> {
-  let brotli_exe: Option<&str> = Some("G:/Development/GitHub/brotli.exe");
-  let vcdiff_exe: Option<&str> = Some("G:/Development/GitHub/xdelta3.exe");
+  let brotli_exe = if cfg!(windows) {
+    "brotli.exe"
+  } else {
+    "brotli"
+  };
+  let vcdiff_exe = if cfg!(windows) {
+    "xdelta3.exe"
+  } else {
+    "xdelta3"
+  };
   let mut vec = Vec::new();
 
   ordered_dir_list(&mut vec, src, 0)?;
@@ -300,7 +307,7 @@ fn build_operations(
         let (final_size, final_sha1) = compute_size_and_sha1(&src_path)?;
         let src_file = fs::File::open(&src_path)?;
         let tmp_file = fs::File::create(&tmp_path)?;
-        let mut brotli = process::Command::new(brotli_exe.unwrap())
+        let mut brotli = process::Command::new(brotli_exe)
           .arg("-9") // write on standard output
           .arg("--stdout") // write on standard output
           .arg("-") // read standard input
@@ -327,6 +334,7 @@ fn build_operations(
             data_sha1,
             final_size,
             final_sha1,
+            exe: false,
           },
           Some(tmp_path),
         ))
@@ -350,14 +358,14 @@ fn build_operations(
               path,
               local_size,
               local_sha1,
+              exe: false,
             },
             None,
           ))
-        }
-        else {
+        } else {
           debug!("computing delta {}", path);
           let tmp_file = fs::File::create(&tmp_path)?;
-          let mut vcdiff = process::Command::new(vcdiff_exe.unwrap())
+          let mut vcdiff = process::Command::new(vcdiff_exe)
             .arg("-e") // compress
             .arg("-c") // use stdout
             .arg("-s")
@@ -366,7 +374,7 @@ fn build_operations(
             .stdout(process::Stdio::piped())
             .stderr(process::Stdio::inherit())
             .spawn()?;
-          let mut brotli = process::Command::new(brotli_exe.unwrap())
+          let mut brotli = process::Command::new(brotli_exe)
             .arg("-9") // write on standard output
             .arg("--stdout") // write on standard output
             .arg("-") // read standard input
@@ -403,6 +411,7 @@ fn build_operations(
               local_sha1,
               final_size,
               final_sha1,
+              exe: false,
             },
             Some(tmp_path),
           ))
@@ -446,87 +455,4 @@ fn build_operations(
   }
 
   Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-  use packager::Repository;
-  use std::path::{Path, PathBuf};
-  use std::io;
-  use std::fs;
-  use log::{self, Level, Metadata, Record};
-
-  struct SimpleLogger;
-
-  impl log::Log for SimpleLogger {
-    fn enabled(&self, metadata: &Metadata) -> bool {
-      true
-    }
-
-    fn log(&self, record: &Record) {
-      if self.enabled(record.metadata()) {
-        println!("{} - {}", record.level(), record.args());
-      }
-    }
-
-    fn flush(&self) {}
-  }
-  static LOGGER: SimpleLogger = SimpleLogger;
-
-  #[test]
-  fn package() {
-    log::set_logger(&LOGGER);
-    log::set_max_level(log::LevelFilter::Debug);
-
-    let repository_dir = Path::new("G:/Development/SGN/deploy/pre-release/win64/launcher");
-    let data_dir = Path::new("G:/Development/SGN/deploy/pre-release-src/win64/launcher/v4.0.4");
-    let build_dir = Path::new("G:/Development/SGN/deploy/pre-release/win64/.build");
-    let mut repository = Repository::new(repository_dir.to_owned());
-    fs::create_dir_all(&build_dir);
-    repository
-      .add_package(build_dir, data_dir, "v4.0.4", "", None)
-      .expect("package to succeed");
-    /*
-    let base_path = Path::new("target-tst");
-    let data_path = Path::new("tst");
-    let repository_dir = base_path.join("repository");
-    let build_dir = base_path.join("build");
-    fs::create_dir_all(&build_dir);
-    fs::create_dir_all(&build_dir.join("step1"));
-    fs::create_dir_all(&build_dir.join("step2"));
-    fs::create_dir_all(&build_dir.join("step3"));
-    fs::create_dir_all(&repository_dir);
-    let mut repository = Repository::new(repository_dir);
-    repository.init().expect("init should not fail");
-    repository
-      .add_package(
-        &build_dir.join("step1"),
-        &data_path.join("rev1"),
-        "v1",
-        "desc v1",
-        None,
-      )
-      .expect("package to succeed");
-    repository
-      .add_package(
-        &build_dir.join("step2"),
-        &data_path.join("rev2"),
-        "v2",
-        "desc v2",
-        Some("v1"),
-      )
-      .expect("package 2 to succeed");
-
-    repository
-      .add_package(
-        &build_dir.join("step3"),
-        &data_path.join("rev2"),
-        "v3",
-        "desc v3",
-        Some("v2"),
-      )
-      .expect("package 3 to succeed");
-
-      */
-  }
 }

@@ -1,13 +1,13 @@
+use sha1::Sha1;
 use std::cell::RefCell;
+use std::fs;
 use std::io;
 use std::io::Read;
-use std::fs;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use workspace::WorkspaceFileManager;
-use updater::UpdateOptions;
-use sha1::Sha1;
 use std::rc::Rc;
+use updater::UpdateOptions;
+use workspace::WorkspaceFileManager;
 use BUFFER_SIZE;
 
 pub struct FinalWriterStats {
@@ -149,7 +149,28 @@ impl ApplyGuard {
   }
 }
 
-pub fn check_file(path: &Path, expected_size: u64, expected_sha1: [u8; 20]) -> io::Result<()> {
+#[cfg(unix)]
+fn check_permission(file: &fs::File, exe: bool) -> io::Result<()> {
+  use std::os::unix::fs::PermissionsExt;
+  let mut perms = file.metadata()?.permissions();
+  if (perms.mode() & 0o444) == 0o444 {
+    perms.set_mode(perms.mode() | 0o444);
+    file.set_permissions(perms)?;
+  }
+  Ok(())
+}
+
+#[cfg(not(unix))]
+fn check_permission(_file: &fs::File, _exe: bool) -> io::Result<()> {
+  Ok(())
+}
+
+pub fn check_file(
+  path: &Path,
+  expected_size: u64,
+  expected_sha1: [u8; 20],
+  exe: bool,
+) -> io::Result<()> {
   let size = fs::metadata(&path).map(|m| m.len())?;
   if size != expected_size {
     Err(io::Error::new(
@@ -174,7 +195,7 @@ pub fn check_file(path: &Path, expected_size: u64, expected_sha1: [u8; 20]) -> i
         "local sha1 mismatch",
       ))
     } else {
-      Ok(())
+      check_permission(&file, exe)
     }
   }
 }

@@ -1,15 +1,15 @@
-use std::ops::Range;
-use std::io;
-use std::io::{Read, Seek, Write};
-use std::fs;
-use std::fs::File;
+use brotli::DecompressorWriter;
 use operation;
 use operation::FinalWriter;
+use std::fs;
+use std::fs::File;
+use std::io;
+use std::io::{Read, Seek, Write};
+use std::ops::Range;
 use storage;
-use brotli::DecompressorWriter;
-use workspace::WorkspaceFileManager;
 use updater::UpdateOptions;
 use vcdiff_rs::{DecoderState, VCDiffDecoder};
+use workspace::WorkspaceFileManager;
 use BUFFER_SIZE;
 
 mod u64_str {
@@ -40,7 +40,8 @@ pub struct Version {
 pub struct Package {
   pub from: String,
   pub to: String,
-  #[serde(with = "u64_str")] pub size: u64,
+  #[serde(with = "u64_str")]
+  pub size: u64,
 }
 
 impl Package {
@@ -86,12 +87,17 @@ pub enum Operation {
     #[serde(rename = "dataSize")]
     #[serde(with = "u64_str")]
     data_size: u64,
-    #[serde(rename = "dataSha1")] data_sha1: String,
-    #[serde(rename = "dataCompression")] data_compression: String,
+    #[serde(rename = "dataSha1")]
+    data_sha1: String,
+    #[serde(rename = "dataCompression")]
+    data_compression: String,
     #[serde(rename = "finalSize")]
     #[serde(with = "u64_str")]
     final_size: u64,
-    #[serde(rename = "finalSha1")] final_sha1: String,
+    #[serde(rename = "finalSha1")]
+    final_sha1: String,
+    #[serde(default)]
+    exe: bool,
   },
   #[serde(rename = "patch")]
   Patch {
@@ -102,17 +108,24 @@ pub enum Operation {
     #[serde(rename = "dataSize")]
     #[serde(with = "u64_str")]
     data_size: u64,
-    #[serde(rename = "dataSha1")] data_sha1: String,
-    #[serde(rename = "dataCompression")] data_compression: String,
-    #[serde(rename = "patchType")] patch_type: String,
+    #[serde(rename = "dataSha1")]
+    data_sha1: String,
+    #[serde(rename = "dataCompression")]
+    data_compression: String,
+    #[serde(rename = "patchType")]
+    patch_type: String,
     #[serde(rename = "localSize")]
     #[serde(with = "u64_str")]
     local_size: u64,
-    #[serde(rename = "localSha1")] local_sha1: String,
+    #[serde(rename = "localSha1")]
+    local_sha1: String,
     #[serde(rename = "finalSize")]
     #[serde(with = "u64_str")]
     final_size: u64,
-    #[serde(rename = "finalSha1")] final_sha1: String,
+    #[serde(rename = "finalSha1")]
+    final_sha1: String,
+    #[serde(default)]
+    exe: bool,
   },
   #[serde(rename = "check")]
   Check {
@@ -120,17 +133,17 @@ pub enum Operation {
     #[serde(rename = "localSize")]
     #[serde(with = "u64_str")]
     local_size: u64,
-    #[serde(rename = "localSha1")] local_sha1: String,
+    #[serde(rename = "localSha1")]
+    local_sha1: String,
+    #[serde(default)]
+    exe: bool,
   },
-  #[serde(rename = "mkdir")] MkDir {
-    path: String,
-  },
-  #[serde(rename = "rmdir")] RmDir {
-    path: String,
-  },
-  #[serde(rename = "rm")] Rm {
-    path: String,
-  },
+  #[serde(rename = "mkdir")]
+  MkDir { path: String },
+  #[serde(rename = "rmdir")]
+  RmDir { path: String },
+  #[serde(rename = "rm")]
+  Rm { path: String },
 }
 
 impl Operation {
@@ -140,17 +153,20 @@ impl Operation {
         ref path,
         final_size,
         ref final_sha1,
+        exe,
         ..
       }
       | &Operation::Patch {
         ref path,
         final_size,
         ref final_sha1,
+        exe,
         ..
       } => Some(Operation::Check {
         path: path.clone(),
         local_size: final_size,
         local_sha1: final_sha1.clone(),
+        exe,
       }),
       &Operation::Check { .. } | &Operation::MkDir { .. } => Some(self.clone()),
       &Operation::RmDir { .. } | &Operation::Rm { .. } => None,
@@ -220,10 +236,12 @@ impl operation::Operation for Operation {
       } => {
         let tmp_path = file_manager.tmp_operation_path(index);
         let final_path = file_manager.dir().join(path);
-        let tmp_file = FinalWriter::new(fs::OpenOptions::new()
-          .write(true)
-          .create(true)
-          .open(&tmp_path)?);
+        let tmp_file = FinalWriter::new(
+          fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&tmp_path)?,
+        );
         Ok(Some(operation::ApplyGuard::new(
           data_size,
           decode_sha1_digest(data_sha1)?,
@@ -262,11 +280,13 @@ impl operation::Operation for Operation {
           .write(true)
           .open(&final_path)?;
         let tmp_path = file_manager.tmp_operation_path(index);
-        let tmp_file = FinalWriter::new(fs::OpenOptions::new()
-          .write(true)
-          .read(true)
-          .create(true)
-          .open(&tmp_path)?);
+        let tmp_file = FinalWriter::new(
+          fs::OpenOptions::new()
+            .write(true)
+            .read(true)
+            .create(true)
+            .open(&tmp_path)?,
+        );
         Ok(Some(operation::ApplyGuard::new(
           data_size,
           decode_sha1_digest(data_sha1)?,
@@ -282,12 +302,14 @@ impl operation::Operation for Operation {
         ref path,
         local_size,
         ref local_sha1,
+        exe,
       } => {
         if update_options.check {
           operation::check_file(
             &file_manager.dir().join(path),
             local_size,
             decode_sha1_digest(local_sha1)?,
+            exe,
           ).map(|_| None)
         } else {
           Ok(None)
@@ -357,7 +379,8 @@ struct VCDiffDecoderWriter<ORIGINAL: Read + Seek, TARGET: Write + Read + Seek> {
 }
 
 impl<ORIGINAL: Read + Seek, TARGET: Write + Read + Seek> Write
-  for VCDiffDecoderWriter<ORIGINAL, TARGET> {
+  for VCDiffDecoderWriter<ORIGINAL, TARGET>
+{
   fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
     self.state = self.decoder.decode(buf)?;
     Ok(buf.len())

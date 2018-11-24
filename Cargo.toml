@@ -1,19 +1,4 @@
-[package]
-name = "update_system"
-version = "0.1.0"
-authors = ["Vincent (Speedy37) Rouille <vincent@speedy37.fr>"]
-
-[dependencies]
-brotli = "1.1.0"
-bytes = "0.4.5"
-futures = "0.1.17"
-futures-cpupool = "0.1.1"
-hyper = "0.11.1"
-hyper-tls = "0.1.2"
-serde = "1.0"
-serde_derive = "1.0"
-serde_json = "1.0"
-sha1 = "0.3.0"
-tokio-core = "0.1.10"
-vcdiff-rs = { path = "../vcdiff-rs" }
-log = "0.4.1"
+[workspace]
+members = ["updater",
+           "bin/repository",
+           "bindings/c"]

@@ -1,7 +1,8 @@
-extern crate update_system;
+extern crate env_logger;
+extern crate updater;
 
-use update_system::update_workspace;
-use update_system::progression::{GlobalProgression, Progression, TimedProgression};
+use updater::progression::{Progression, TimedProgression};
+use updater::update_workspace;
 
 use std::ffi::CStr;
 use std::ffi::CString;
@@ -38,6 +39,11 @@ pub struct CGlobalProgression {
   pub applied_files_per_sec: f64,
   pub applied_input_bytes_per_sec: f64,
   pub applied_output_bytes_per_sec: f64,
+}
+
+#[no_mangle]
+pub extern "C" fn c_init_logger(_lvl: c_int) {
+  env_logger::init();
 }
 
 #[no_mangle]

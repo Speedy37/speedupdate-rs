@@ -1,14 +1,12 @@
-use storage;
-use futures::{future, stream, Async, Future, Poll, Stream};
-use std::path::PathBuf;
-use std::io::{self, Read, Seek, SeekFrom};
-use std::cmp;
-use std::fs;
-use serde_json;
+use bytes::Bytes;
+use futures::{future, stream, Future};
 use repository::{Error, RemoteRepository, RepositoryFuture, RepositoryStream};
+use serde_json;
+use std::fs;
+use std::io::{Read, Seek, SeekFrom};
 use std::ops::Range;
-use bytes::{Bytes, BytesMut};
-use BUFFER_SIZE;
+use std::path::PathBuf;
+use storage;
 
 pub struct LocalRepository {
   dir: PathBuf,
@@ -87,8 +85,7 @@ impl RemoteRepository for LocalRepository {
         }).map_err(Error::IoError);
         */
         Ok(stream)
-      })
-      .flatten_stream();
+      }).flatten_stream();
     Box::new(stream)
   }
 }

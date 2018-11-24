@@ -14,25 +14,24 @@ extern crate sha1;
 extern crate tokio_core;
 extern crate vcdiff_rs;
 
-mod storage;
-mod operation;
-mod repository;
-pub mod workspace;
-mod download;
 mod apply;
-mod updater;
+mod download;
+mod operation;
 pub mod progression;
-pub mod packager;
+pub mod repository;
+pub mod storage;
+pub mod updater;
+pub mod workspace;
 
-use tokio_core::reactor::Core;
-use repository::{RemoteRepository, RepositoryFuture};
-use repository::https::{BasicAuth, HttpsRepository};
-use std::path::Path;
 use futures::future;
-use futures::Future;
 use futures::stream::Stream;
-use updater::{update, Error, UpdateOptions};
+use futures::Future;
 use progression::GlobalProgression;
+use repository::https::{BasicAuth, HttpsRepository};
+use repository::{RemoteRepository, RepositoryFuture};
+use std::path::Path;
+use tokio_core::reactor::Core;
+use updater::{update, Error, UpdateOptions};
 use workspace::Workspace;
 
 pub const BUFFER_SIZE: usize = 65536;
@@ -47,7 +46,12 @@ pub fn update_workspace<F>(
 where
   F: FnMut(&GlobalProgression) -> bool,
 {
-  info!("update_workspace {} {} @ {}", workspace_path, repository_url, goal_version.unwrap_or("latest"));
+  info!(
+    "update_workspace {} {} @ {}",
+    workspace_path,
+    repository_url,
+    goal_version.unwrap_or("latest")
+  );
   let mut core = Core::new().unwrap();
   let handle = core.handle();
   let repository = HttpsRepository::new(
@@ -63,14 +67,10 @@ where
   let goal_version: RepositoryFuture<String> = if let Some(goal_version) = goal_version {
     Box::new(future::ok(goal_version.to_owned()))
   } else {
-    Box::new(
-      repository
-        .current_version()
-        .and_then(|c| {
-          info!("latest = {}", c.version());
-          Ok(c.version().to_owned())
-        }),
-    )
+    Box::new(repository.current_version().and_then(|c| {
+      info!("latest = {}", c.version());
+      Ok(c.version().to_owned())
+    }))
   };
   let mut effective_goal_version = String::new();
   let work = goal_version

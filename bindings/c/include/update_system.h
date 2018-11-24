@@ -24,6 +24,9 @@ typedef struct {
   double applied_output_bytes_per_sec;
 } CGlobalProgression;
 
+
+extern void c_init_logger(int lvl);
+
 extern void c_free_string(char *ptr);
 extern char* c_update_workspace(
   const char* workspace_path,

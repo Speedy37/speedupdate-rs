@@ -1,10 +1,11 @@
 [package]
 name = "update_system_c"
 version = "0.1.0"
-authors = ["Vincent Rouillé <v-rouille@logitud.fr>"]
+authors = ["Vincent Rouillé <vincent@speedy37.fr>"]
 
 [dependencies]
-update_system = { path = "../../" }
+env_logger = "0.6"
+updater = { path = "../../updater" }
 
 [lib]
 crate-type = ["cdylib"]
