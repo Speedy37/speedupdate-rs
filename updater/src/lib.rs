@@ -63,7 +63,7 @@ where
     }),
   );
   let mut workspace = Workspace::new(Path::new(workspace_path));
-  let _ = workspace.load_state();
+  workspace.load_state()?;
   let goal_version: RepositoryFuture<String> = if let Some(goal_version) = goal_version {
     Box::new(future::ok(goal_version.to_owned()))
   } else {
@@ -86,8 +86,12 @@ where
       );
       stream.for_each(move |progress| {
         let progress = &*progress.borrow();
-        progress_callback(progress);
-        Ok(())
+        if !progress_callback(progress) {
+          Err(Error::Aborted)
+        }
+        else {
+          Ok(())
+        }
       })
     });
   core.run(work)

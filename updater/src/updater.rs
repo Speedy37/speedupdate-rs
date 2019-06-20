@@ -19,6 +19,7 @@ use workspace::{CheckPackageMetadata, State, StateUpdating, UpdatePosition, Work
 
 #[derive(Debug)]
 pub enum Error {
+  Aborted,
   RemoteRepository(RepositoryError),
   IoError(io::Error),
   NoPath,
@@ -147,6 +148,7 @@ impl From<io::Error> for Error {
 impl fmt::Display for Error {
   fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
     match self {
+      &Error::Aborted => write!(fmt, "aborted"),
       &Error::NoPath => write!(fmt, "no update path"),
       &Error::RecoveryFailed => write!(fmt, "recovery failed"),
       &Error::IoError(ref err) => err.fmt(fmt),
