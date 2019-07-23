@@ -22,8 +22,7 @@ pub mod updater;
 pub mod workspace;
 
 use crate::progression::GlobalProgression;
-use crate::repository::https::HttpsRepository;
-use crate::repository::{RemoteRepository, RepositoryFuture};
+use crate::repository::{AutoRepository, RemoteRepository, RepositoryFuture};
 use crate::updater::{update, Error, UpdateOptions};
 use crate::workspace::Workspace;
 use futures::future;
@@ -49,7 +48,7 @@ where
     repository_url,
     goal_version.unwrap_or("latest")
   );
-  let repository = HttpsRepository::new(repository_url, auth);
+  let repository = AutoRepository::new(repository_url, auth).ok_or(Error::UnsupportedRemote)?;
   let mut workspace = Workspace::new(Path::new(workspace_path));
   workspace.load_state()?;
   let goal_version: RepositoryFuture<String> = if let Some(goal_version) = goal_version {

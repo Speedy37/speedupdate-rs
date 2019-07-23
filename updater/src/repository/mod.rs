@@ -10,6 +10,7 @@ use serde_json::error::Error as JsonError;
 use std::fmt;
 use std::io;
 use std::ops::Range;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub enum Error {
@@ -40,4 +41,59 @@ pub trait RemoteRepository {
   fn packages(&self) -> RepositoryFuture<storage::Packages>;
   fn package_metadata(&self, package_name: &str) -> RepositoryFuture<storage::PackageMetadata>;
   fn package(&self, package_name: &str, range: Range<u64>) -> RepositoryStream<Bytes>;
+}
+
+pub enum AutoRepository {
+  Https(https::HttpsRepository),
+  File(local::LocalRepository),
+}
+
+impl AutoRepository {
+  pub fn new(repository_url: &str, auth: Option<(&str, &str)>) -> Option<Self> {
+    if repository_url.starts_with("https://") {
+      Some(AutoRepository::Https(https::HttpsRepository::new(
+        repository_url,
+        auth,
+      )))
+    } else if repository_url.starts_with("file://") {
+      Some(AutoRepository::File(local::LocalRepository::new(
+        (&repository_url["file://".len()..]).into(),
+      )))
+    } else {
+      None
+    }
+  }
+}
+
+impl RemoteRepository for AutoRepository {
+  fn current_version(&self) -> RepositoryFuture<storage::Current> {
+    match self {
+      AutoRepository::Https(r) => r.current_version(),
+      AutoRepository::File(r) => r.current_version(),
+    }
+  }
+  fn versions(&self) -> RepositoryFuture<storage::Versions> {
+    match self {
+      AutoRepository::Https(r) => r.versions(),
+      AutoRepository::File(r) => r.versions(),
+    }
+  }
+  fn packages(&self) -> RepositoryFuture<storage::Packages> {
+    match self {
+      AutoRepository::Https(r) => r.packages(),
+      AutoRepository::File(r) => r.packages(),
+    }
+  }
+  fn package_metadata(&self, package_name: &str) -> RepositoryFuture<storage::PackageMetadata> {
+    match self {
+      AutoRepository::Https(r) => r.package_metadata(package_name),
+      AutoRepository::File(r) => r.package_metadata(package_name),
+    }
+  }
+  fn package(&self, package_name: &str, range: Range<u64>) -> RepositoryStream<Bytes> {
+    match self {
+      AutoRepository::Https(r) => r.package(package_name, range),
+      AutoRepository::File(r) => r.package(package_name, range),
+    }
+  }
 }

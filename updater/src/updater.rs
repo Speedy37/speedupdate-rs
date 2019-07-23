@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 #[derive(Debug)]
 pub enum Error {
   Aborted,
+  UnsupportedRemote,
   RemoteRepository(RepositoryError),
   IoError(io::Error),
   NoPath,
@@ -150,6 +151,7 @@ impl From<io::Error> for Error {
 impl fmt::Display for Error {
   fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
     match self {
+      &Error::UnsupportedRemote => write!(fmt, "unsupported remote url"),
       &Error::Aborted => write!(fmt, "aborted"),
       &Error::NoPath => write!(fmt, "no update path"),
       &Error::RecoveryFailed => write!(fmt, "recovery failed"),
