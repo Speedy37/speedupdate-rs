@@ -18,7 +18,7 @@ use std::fs;
 use std::path::Path;
 use std::process;
 
-use repository::Repository;
+use crate::repository::Repository;
 
 fn main() {
   env_logger::init();
@@ -35,25 +35,41 @@ fn main() {
             .help("Repository path")
             .required(true),
         ),
-    ).subcommand(
+    )
+    .subcommand(
+      SubCommand::with_name("status")
+        .about("repository status")
+        .arg(
+          Arg::with_name("PATH")
+            .help("Repository path")
+            .required(true),
+        ),
+    )
+    .subcommand(
       SubCommand::with_name("add-package")
         .about("add package to repository")
         .arg(
           Arg::with_name("PATH")
             .help("Repository path")
             .required(true),
-        ).arg(Arg::with_name("DATA").help("Path to pack").required(true))
+        )
+        .arg(Arg::with_name("DATA").help("Path to pack").required(true))
         .arg(
           Arg::with_name("VERSION")
             .help("Pack version")
             .required(true),
         ),
-    ).get_matches();
+    )
+    .get_matches();
 
   let r = match app_m.subcommand() {
     ("init", Some(sub_m)) => {
       let path = sub_m.value_of("PATH").expect("Repository path");
       repository_init(path)
+    }
+    ("status", Some(sub_m)) => {
+      let path = sub_m.value_of("PATH").expect("Repository path");
+      repository_status(path)
     }
     ("add-package", Some(sub_m)) => {
       let path = sub_m.value_of("PATH").expect("Repository path");
@@ -61,7 +77,7 @@ fn main() {
       let version = sub_m.value_of("VERSION").expect("Path version");
       repository_add_package(path, data, version)
     }
-    (cmd, _) => Err(app_m.usage().to_owned()),
+    (_cmd, _) => Err(app_m.usage().to_owned()),
   };
   let exit_code = match r {
     Ok(msg) => {
@@ -85,6 +101,28 @@ fn repository_init(path: &str) -> Result<String, String> {
     .init()
     .map_err(|err| format!("unable to initialize repository: {}", err))?;
   Ok(format!("repository initialized"))
+}
+
+fn repository_status(path: &str) -> Result<String, String> {
+  let repository_dir = Path::new(path);
+  let repository = Repository::new(repository_dir.to_owned());
+  let current_version = repository
+    .current_version()
+    .map_err(|err| format!("unable to get current_version: {}", err))?;
+  let packages = repository
+    .packages()
+    .map_err(|err| format!("unable to get packages: {}", err))?;
+  let versions = repository
+    .versions()
+    .map_err(|err| format!("unable to get versions: {}", err))?;
+  Ok(format!(
+    "current version is {}\n\
+     {} versions, {} packages\n\
+     ",
+    current_version.version(),
+    versions.len(),
+    packages.len(),
+  ))
 }
 
 fn repository_add_package(path: &str, data: &str, version: &str) -> Result<String, String> {
