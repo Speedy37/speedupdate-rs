@@ -188,7 +188,9 @@ pub fn apply_package(
         if let Some(mut applier) = res {
           let mut buffer = [0u8; BUFFER_SIZE];
 
-          wait_until(&t_available, |available| idx <= available.package_idx)?;
+          // Wait until there is a least a few bytes available in the current package before
+          // opening the file
+          wait_until(&t_available, |available| applied_data < *available)?;
 
           let data_file_path = file_manager.download_operation_path(idx);
           {
