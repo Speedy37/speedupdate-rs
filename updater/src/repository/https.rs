@@ -3,69 +3,72 @@ use crate::storage;
 use bytes::Bytes;
 use futures::future;
 use futures::{Future, IntoFuture, Stream};
-use hyper::error::{Error as HyperError, UriError};
-pub use hyper::header::Basic as BasicAuth;
-use hyper::header::{Authorization, ByteRangeSpec, Range as RangeHeader, UserAgent};
-use hyper::{Body, Headers, Method, Request, Response, StatusCode, Uri};
+use hyper::header;
+use hyper::{client::HttpConnector, Client};
+use hyper::{Body, Request, Response, StatusCode};
+use hyper_tls::HttpsConnector;
 use serde_json;
 use std::ops::Range;
-use tokio_core::reactor::Handle;
 
 pub struct HttpsRepository {
-  client: ::hyper::Client<::hyper_tls::HttpsConnector<::hyper::client::HttpConnector>>,
+  client: Client<HttpsConnector<HttpConnector>>,
   remote_url: String,
-  headers: Headers,
+  authorization: Option<String>,
 }
 
 impl HttpsRepository {
-  pub fn new(
-    handle: &Handle,
-    remote_url: &str,
-    authorization: Option<BasicAuth>,
-  ) -> HttpsRepository {
-    let client = ::hyper::Client::configure()
-      .connector(::hyper_tls::HttpsConnector::new(1, handle).unwrap())
-      .build(handle);
-    let mut headers = Headers::new();
-    headers.set(UserAgent::new("hyper/0.11.1"));
-    if let Some(authorization) = authorization {
-      headers.set(Authorization(authorization));
-    }
+  pub fn new(remote_url: &str, authorization: Option<(&str, &str)>) -> HttpsRepository {
+    let https = HttpsConnector::new(1).expect("TLS initialization failed");
+    let client = Client::builder().build::<_, Body>(https);
+    let authorization = authorization.map(|(username, password)| {
+      format!(
+        "Basic {}",
+        base64::encode(&format!("{}:{}", username, password))
+      )
+    });
     HttpsRepository {
-      client: client,
-      remote_url: String::from(remote_url),
-      headers: headers,
+      client,
+      remote_url: remote_url.to_string(),
+      authorization,
     }
   }
 
-  fn uri(&self, sub_path: &str) -> Result<Uri, UriError> {
+  fn uri(&self, sub_path: &str) -> String {
     let mut url = self.remote_url.clone();
     if !url.ends_with("/") {
       url.push_str("/");
     }
     url.push_str(sub_path);
-    url.parse()
+    url
   }
 
-  fn get(&self, sub_path: &str, headers: Option<Headers>) -> RepositoryFuture<Response> {
-    match self.uri(sub_path) {
-      Ok(url) => {
-        let mut req = Request::new(Method::Get, url);
-        req.headers_mut().extend(self.headers.iter());
-        if let Some(headers) = headers {
-          req.headers_mut().extend(headers.iter());
-        }
-        let res = self.client.request(req).map_err(|e| Error::Hyper(e));
-        Box::new(res)
+  fn get(
+    &self,
+    sub_path: &str,
+    headers_it: impl Iterator<Item = (header::HeaderName, String)>,
+  ) -> impl Future<Item = Response<Body>, Error = Error> {
+    (|| {
+      let mut builder = Request::get(self.uri(sub_path));
+      builder.header(header::USER_AGENT, "hyper/0.11.1");
+      if let Some(authorization) = self.authorization.as_ref() {
+        builder.header(header::AUTHORIZATION, authorization.as_str());
       }
-      Err(why) => Box::new(Err(Error::Hyper(HyperError::from(why))).into_future()),
-    }
+      for (name, val) in headers_it {
+        builder.header(name, val);
+      }
+
+      builder.body(Body::default())
+    })()
+    .map_err(Error::Http)
+    .map(|req| self.client.request(req).map_err(Error::Hyper))
+    .into_future()
+    .flatten()
   }
 }
 
-fn is_statuscode_ok(res: Response) -> Result<Body, Error> {
-  if res.status() == StatusCode::Ok {
-    Ok(res.body())
+fn is_statuscode_ok(res: Response<Body>) -> Result<Body, Error> {
+  if res.status() == StatusCode::OK {
+    Ok(res.into_body())
   } else {
     Err(Error::StatusCode(res.status()))
   }
@@ -74,7 +77,7 @@ fn is_statuscode_ok(res: Response) -> Result<Body, Error> {
 impl RemoteRepository for HttpsRepository {
   fn current_version(&self) -> RepositoryFuture<storage::Current> {
     let body = self
-      .get("current", None)
+      .get("current", std::iter::empty())
       .and_then(|res| is_statuscode_ok(res));
     let json = body.and_then(|body| {
       body
@@ -89,7 +92,7 @@ impl RemoteRepository for HttpsRepository {
 
   fn versions(&self) -> RepositoryFuture<storage::Versions> {
     let body = self
-      .get("versions", None)
+      .get("versions", std::iter::empty())
       .and_then(|res| is_statuscode_ok(res));
     let json = body.and_then(|body| {
       body
@@ -103,7 +106,7 @@ impl RemoteRepository for HttpsRepository {
   }
   fn packages(&self) -> RepositoryFuture<storage::Packages> {
     let body = self
-      .get("packages", None)
+      .get("packages", std::iter::empty())
       .and_then(|res| is_statuscode_ok(res));
     let json = body.and_then(|body| {
       body
@@ -120,7 +123,7 @@ impl RemoteRepository for HttpsRepository {
     package_name_metadata: &str,
   ) -> RepositoryFuture<storage::PackageMetadata> {
     let body = self
-      .get(package_name_metadata, None)
+      .get(package_name_metadata, std::iter::empty())
       .and_then(|res| is_statuscode_ok(res));
     let json = body.and_then(|body| {
       body
@@ -134,15 +137,16 @@ impl RemoteRepository for HttpsRepository {
   }
 
   fn package(&self, package_name: &str, range: Range<u64>) -> RepositoryStream<Bytes> {
-    let mut headers = Headers::new();
-    headers.set(RangeHeader::Bytes(vec![ByteRangeSpec::FromTo(
-      range.start,
-      range.end,
-    )]));
     let body = self
-      .get(package_name, Some(headers))
+      .get(
+        package_name,
+        std::iter::once((
+          header::RANGE,
+          format!("bytes={}-{}", range.start, range.end),
+        )),
+      )
       .and_then(move |res| match res.status() {
-        StatusCode::PartialContent => Ok(res.body()),
+        StatusCode::PARTIAL_CONTENT => Ok(res.into_body()),
         status => Err(Error::StatusCode(status)),
       });
     let chunks = body.and_then(|body| future::ok(body.map(Bytes::from).map_err(Error::Hyper)));

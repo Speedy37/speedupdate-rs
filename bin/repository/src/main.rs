@@ -8,7 +8,6 @@ extern crate log;
 extern crate serde;
 extern crate serde_json;
 extern crate sha1;
-extern crate tokio_core;
 extern crate updater;
 
 mod repository;

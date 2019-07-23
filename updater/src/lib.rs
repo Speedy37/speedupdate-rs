@@ -6,12 +6,10 @@ extern crate hyper;
 extern crate hyper_tls;
 #[macro_use]
 extern crate log;
-extern crate serde;
 #[macro_use]
-extern crate serde_derive;
+extern crate serde;
 extern crate serde_json;
 extern crate sha1;
-extern crate tokio_core;
 extern crate vcdiff_rs;
 
 mod apply;
@@ -24,7 +22,7 @@ pub mod updater;
 pub mod workspace;
 
 use crate::progression::GlobalProgression;
-use crate::repository::https::{BasicAuth, HttpsRepository};
+use crate::repository::https::HttpsRepository;
 use crate::repository::{RemoteRepository, RepositoryFuture};
 use crate::updater::{update, Error, UpdateOptions};
 use crate::workspace::Workspace;
@@ -32,7 +30,6 @@ use futures::future;
 use futures::stream::Stream;
 use futures::Future;
 use std::path::Path;
-use tokio_core::reactor::Core;
 
 pub const BUFFER_SIZE: usize = 65536;
 
@@ -52,16 +49,7 @@ where
     repository_url,
     goal_version.unwrap_or("latest")
   );
-  let mut core = Core::new().unwrap();
-  let handle = core.handle();
-  let repository = HttpsRepository::new(
-    &handle,
-    repository_url,
-    auth.map(|(username, password)| BasicAuth {
-      username: username.to_owned(),
-      password: Some(password.to_owned()),
-    }),
-  );
+  let repository = HttpsRepository::new(repository_url, auth);
   let mut workspace = Workspace::new(Path::new(workspace_path));
   workspace.load_state()?;
   let goal_version: RepositoryFuture<String> = if let Some(goal_version) = goal_version {
@@ -93,5 +81,5 @@ where
         }
       })
     });
-  core.run(work)
+  work.wait()
 }

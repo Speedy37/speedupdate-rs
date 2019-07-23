@@ -9,7 +9,6 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process;
-use tokio_core::reactor::Core;
 
 use operation::FinalWriter;
 use repository::local::LocalRepository;
@@ -106,7 +105,6 @@ impl Repository {
       Some(previous_version) => {
         fs::create_dir_all(&previous_directory)?;
         let mut workspace = Workspace::new(&previous_directory);
-        let mut core = Core::new().unwrap();
         let remote = LocalRepository::new(self.dir.clone());
         {
           let update_stream = update(
@@ -116,7 +114,7 @@ impl Repository {
             UpdateOptions { check: false },
           );
           let update_future = update_stream.for_each(move |_| Ok(()));
-          core.run(update_future).map_err(|err| {
+          update_future.wait().map_err(|err| {
             println!("err= {:?}", err);
             io::Error::new(io::ErrorKind::Other, "unable to restore previous version")
           })?;

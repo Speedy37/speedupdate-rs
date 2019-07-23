@@ -15,6 +15,7 @@ use std::ops::Range;
 pub enum Error {
   IoError(io::Error),
   Hyper(HyperError),
+  Http(hyper::http::Error),
   Json(JsonError),
   StatusCode(StatusCode),
 }
@@ -24,6 +25,7 @@ impl fmt::Display for Error {
     match self {
       &Error::IoError(ref io_error) => io_error.fmt(f),
       &Error::Hyper(ref hyper_error) => hyper_error.fmt(f),
+      &Error::Http(ref http_error) => http_error.fmt(f),
       &Error::Json(ref json_error) => json_error.fmt(f),
       &Error::StatusCode(status_code) => write!(f, "{}", status_code),
     }
