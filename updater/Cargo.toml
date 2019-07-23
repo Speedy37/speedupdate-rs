@@ -2,6 +2,7 @@
 name = "updater"
 version = "0.1.0"
 authors = ["Vincent Rouillé <vincent@speedy37.fr>"]
+edition = "2018"
 
 [dependencies]
 brotli = "1.1"

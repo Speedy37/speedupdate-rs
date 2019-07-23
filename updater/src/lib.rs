@@ -23,16 +23,16 @@ pub mod storage;
 pub mod updater;
 pub mod workspace;
 
+use crate::progression::GlobalProgression;
+use crate::repository::https::{BasicAuth, HttpsRepository};
+use crate::repository::{RemoteRepository, RepositoryFuture};
+use crate::updater::{update, Error, UpdateOptions};
+use crate::workspace::Workspace;
 use futures::future;
 use futures::stream::Stream;
 use futures::Future;
-use progression::GlobalProgression;
-use repository::https::{BasicAuth, HttpsRepository};
-use repository::{RemoteRepository, RepositoryFuture};
 use std::path::Path;
 use tokio_core::reactor::Core;
-use updater::{update, Error, UpdateOptions};
-use workspace::Workspace;
 
 pub const BUFFER_SIZE: usize = 65536;
 
@@ -88,8 +88,7 @@ where
         let progress = &*progress.borrow();
         if !progress_callback(progress) {
           Err(Error::Aborted)
-        }
-        else {
+        } else {
           Ok(())
         }
       })

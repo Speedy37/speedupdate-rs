@@ -1,15 +1,15 @@
-use storage;
-use futures::{Future, IntoFuture, Stream};
+use crate::repository::{Error, RemoteRepository, RepositoryFuture, RepositoryStream};
+use crate::storage;
+use bytes::Bytes;
 use futures::future;
+use futures::{Future, IntoFuture, Stream};
+use hyper::error::{Error as HyperError, UriError};
+pub use hyper::header::Basic as BasicAuth;
 use hyper::header::{Authorization, ByteRangeSpec, Range as RangeHeader, UserAgent};
 use hyper::{Body, Headers, Method, Request, Response, StatusCode, Uri};
-use hyper::error::{Error as HyperError, UriError};
-use tokio_core::reactor::Handle;
 use serde_json;
-use repository::{Error, RemoteRepository, RepositoryFuture, RepositoryStream};
 use std::ops::Range;
-use bytes::Bytes;
-pub use hyper::header::Basic as BasicAuth;
+use tokio_core::reactor::Handle;
 
 pub struct HttpsRepository {
   client: ::hyper::Client<::hyper_tls::HttpsConnector<::hyper::client::HttpConnector>>,
@@ -135,9 +135,10 @@ impl RemoteRepository for HttpsRepository {
 
   fn package(&self, package_name: &str, range: Range<u64>) -> RepositoryStream<Bytes> {
     let mut headers = Headers::new();
-    headers.set(RangeHeader::Bytes(vec![
-      ByteRangeSpec::FromTo(range.start, range.end),
-    ]));
+    headers.set(RangeHeader::Bytes(vec![ByteRangeSpec::FromTo(
+      range.start,
+      range.end,
+    )]));
     let body = self
       .get(package_name, Some(headers))
       .and_then(move |res| match res.status() {

@@ -1,21 +1,21 @@
-use futures::{Async, Poll, Stream};
+use crate::operation::Operation;
+use crate::storage::v1;
+use crate::updater::UpdateOptions;
+use crate::workspace::{UpdatePosition, WorkspaceFileManager};
 use futures::task;
 use futures::task::Task;
-use operation::Operation;
+use futures::{Async, Poll, Stream};
 use std::cmp;
-use std::fmt;
 use std::collections::VecDeque;
+use std::fmt;
 use std::fs::{remove_file, OpenOptions};
 use std::io;
 use std::io::prelude::*;
-use std::sync::{Arc, Condvar, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
-use storage::v1;
-use workspace::{UpdatePosition, WorkspaceFileManager};
-use updater::UpdateOptions;
 
-use BUFFER_SIZE;
+use crate::BUFFER_SIZE;
 
 type Item = Result<(usize, u64, u64), ApplyError>;
 
@@ -140,12 +140,14 @@ impl Stream for ApplyStream {
       match data.0.pop_front() {
         Some(Ok(res)) => Ok(Async::Ready(Some(res))),
         Some(Err(err)) => Err(err),
-        None => if self.done.compare_and_swap(1, 2, Ordering::Relaxed) > 0 {
-          Ok(Async::Ready(None))
-        } else {
-          data.1 = Some(task::current());
-          Ok(Async::NotReady)
-        },
+        None => {
+          if self.done.compare_and_swap(1, 2, Ordering::Relaxed) > 0 {
+            Ok(Async::Ready(None))
+          } else {
+            data.1 = Some(task::current());
+            Ok(Async::NotReady)
+          }
+        }
       }
     } else {
       Ok(Async::NotReady)
@@ -174,7 +176,12 @@ pub fn apply_package(
         let res = operation
           .begin_apply(&file_manager, idx, &update_options)
           .map_err(|err| {
-            warn!("begin apply operation#{} {} failed: {}", idx, operation.path(), err);
+            warn!(
+              "begin apply operation#{} {} failed: {}",
+              idx,
+              operation.path(),
+              err
+            );
             err
           })?;
         debug!("begin apply operation#{} {}", idx, operation.path());
@@ -186,10 +193,18 @@ pub fn apply_package(
           let data_file_path = file_manager.download_operation_path(idx);
           {
             let mut total_output_bytes = 0;
-            let mut data_file = OpenOptions::new().read(true).open(&data_file_path).map_err(|err| {
-              warn!("apply operation#{} {} failed: unable to open data file ({})", idx, operation.path(), err);
-              err
-            })?;
+            let mut data_file = OpenOptions::new()
+              .read(true)
+              .open(&data_file_path)
+              .map_err(|err| {
+                warn!(
+                  "apply operation#{} {} failed: unable to open data file ({})",
+                  idx,
+                  operation.path(),
+                  err
+                );
+                err
+              })?;
             let mut remaining = applier.data_size();
             while remaining > 0 {
               let available = wait_until(&t_available, |available| applied_data < *available)?;
@@ -201,11 +216,21 @@ pub fn apply_package(
 
               let max_read = cmp::min(available, buffer.len() as u64) as usize;
               let read = data_file.read(&mut buffer[0..max_read]).map_err(|err| {
-                warn!("apply operation#{} {} failed: unable to read data file ({})", idx, operation.path(), err);
+                warn!(
+                  "apply operation#{} {} failed: unable to read data file ({})",
+                  idx,
+                  operation.path(),
+                  err
+                );
                 err
               })?;
               applier.write_all(&buffer[0..read]).map_err(|err| {
-                warn!("apply operation#{} {} failed: unable to write final file ({})", idx, operation.path(), err);
+                warn!(
+                  "apply operation#{} {} failed: unable to write final file ({})",
+                  idx,
+                  operation.path(),
+                  err
+                );
                 err
               })?;
               let read = read as u64;
@@ -221,7 +246,12 @@ pub fn apply_package(
               total_output_bytes = new_total_output_bytes;
             }
             applier.commit().map_err(|err| {
-              warn!("apply operation#{} {} failed: unable to commit changes ({})", idx, operation.path(), err);
+              warn!(
+                "apply operation#{} {} failed: unable to commit changes ({})",
+                idx,
+                operation.path(),
+                err
+              );
               err
             })?;
           }

@@ -1,13 +1,14 @@
 mod dijkstra;
 pub mod v1;
 
-use std::slice;
 use std::collections::BTreeMap;
+use std::slice;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "version")]
 pub enum Current {
-  #[serde(rename = "1")] V1 { current: v1::Version },
+  #[serde(rename = "1")]
+  V1 { current: v1::Version },
 }
 
 impl Current {
@@ -21,19 +22,39 @@ impl Current {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "version")]
 pub enum Versions {
-  #[serde(rename = "1")] V1 { versions: Vec<v1::Version> },
+  #[serde(rename = "1")]
+  V1 { versions: Vec<v1::Version> },
+}
+
+impl Versions {
+  pub fn as_slice(&self) -> &[v1::Version] {
+    match self {
+      &Versions::V1 { ref versions } => &versions,
+    }
+  }
+  pub fn len(&self) -> usize {
+    match self {
+      &Versions::V1 { ref versions } => versions.len(),
+    }
+  }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "version")]
 pub enum Packages {
-  #[serde(rename = "1")] V1 { packages: Vec<v1::Package> },
+  #[serde(rename = "1")]
+  V1 { packages: Vec<v1::Package> },
 }
 
 impl Packages {
   pub fn as_slice(&self) -> &[v1::Package] {
     match self {
       &Packages::V1 { ref packages } => &packages,
+    }
+  }
+  pub fn len(&self) -> usize {
+    match self {
+      &Packages::V1 { ref packages } => packages.len(),
     }
   }
 }
@@ -50,7 +71,8 @@ pub trait Package {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "version")]
 pub enum PackageMetadata {
-  #[serde(rename = "1")] V1 {
+  #[serde(rename = "1")]
+  V1 {
     package: v1::Package,
     operations: Vec<v1::Operation>,
   },
@@ -102,10 +124,14 @@ impl PackageMetadata {
 pub enum LocalRepository {
   #[serde(rename = "1")]
   V1 {
-    #[serde(rename = "Revision")] revision: String,
-    #[serde(rename = "UpdateInProgress")] update_in_progress: bool,
-    #[serde(rename = "FileList")] file_list: Vec<String>,
-    #[serde(rename = "DirList")] dir_list: Vec<String>,
+    #[serde(rename = "Revision")]
+    revision: String,
+    #[serde(rename = "UpdateInProgress")]
+    update_in_progress: bool,
+    #[serde(rename = "FileList")]
+    file_list: Vec<String>,
+    #[serde(rename = "DirList")]
+    dir_list: Vec<String>,
   },
   #[serde(rename = "2")]
   V2 {

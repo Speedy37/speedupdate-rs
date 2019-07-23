@@ -1,15 +1,15 @@
+use crate::operation;
+use crate::operation::Operation;
+use crate::repository::RemoteRepository;
+use crate::updater::Error;
+use crate::workspace::{UpdatePosition, WorkspaceFileManager};
 use futures::{future, stream, Future, Stream};
-use operation;
-use operation::Operation;
-use repository::RemoteRepository;
 use std::cmp;
 use std::fs::OpenOptions;
 use std::io::Seek;
-use std::io::Write;
 use std::io::SeekFrom;
+use std::io::Write;
 use std::ops::Range;
-use updater::Error;
-use workspace::{UpdatePosition, WorkspaceFileManager};
 
 fn ranges<'a, L, I>(operations: L, offset: u64, merge_distance: u64) -> Vec<Range<u64>>
 where
@@ -78,70 +78,72 @@ where
       .package(&package_name, range)
       .map_err(Error::RemoteRepository)
       .and_then(move |chunk| Ok((range_start, chunk)))
-  })).flatten()
-    .and_then(move |(range_start, chunk)| {
-      pos = cmp::max(pos, range_start);
-      let mut bytes: &[u8] = &chunk;
-      let mut total_bytes = 0;
-      loop {
-        if current_operation.is_none() {
-          if let Some((package_idx, range, file, operation)) = operations_iter.next() {
-            debug!(
-              "begin download operation#{} {} [{}, {})",
-              package_idx,
-              operation.path(),
-              range.start,
-              range.end
-            );
-            let mut file = file?;
-            let pos = if package_idx == start_position.package_idx {
-              start_position.byte_idx
-            } else {
-              0
-            };
-            file.set_len(pos)?;
-            file.seek(SeekFrom::Start(pos))?;
-            position.package_idx = package_idx;
-            position.byte_idx = pos;
-            current_operation = Some((range, file));
-          }
-        }
-        let done = match (bytes.len(), &mut current_operation) {
-          (0, _) => break,
-          (_, &mut None) => break,
-          (_, &mut Some((ref range, ref mut file))) => {
-            if range.start > pos {
-              let ignore_len = cmp::min(bytes.len() as u64, range.start - pos) as usize;
-              bytes = &bytes[ignore_len..];
-            }
-            let remaining = (range.end - pos) as usize;
-            let cur_len = cmp::min(bytes.len(), remaining);
-            let cur_bytes = &bytes[0..cur_len];
-            file.write_all(cur_bytes)?;
-            bytes = &bytes[cur_len..];
-            {
-              let cur_len = cur_len as u64;
-              position.byte_idx += cur_len;
-              pos += cur_len as u64;
-              total_bytes += cur_len;
-            }
-            remaining == cur_len
-          }
-        };
-
-        if done {
-          position.package_idx += 1;
-          position.byte_idx = 0;
-          current_operation = None;
+  }))
+  .flatten()
+  .and_then(move |(range_start, chunk)| {
+    pos = cmp::max(pos, range_start);
+    let mut bytes: &[u8] = &chunk;
+    let mut total_bytes = 0;
+    loop {
+      if current_operation.is_none() {
+        if let Some((package_idx, range, file, operation)) = operations_iter.next() {
+          debug!(
+            "begin download operation#{} {} [{}, {})",
+            package_idx,
+            operation.path(),
+            range.start,
+            range.end
+          );
+          let mut file = file?;
+          let pos = if package_idx == start_position.package_idx {
+            start_position.byte_idx
+          } else {
+            0
+          };
+          file.set_len(pos)?;
+          file.seek(SeekFrom::Start(pos))?;
+          position.package_idx = package_idx;
+          position.byte_idx = pos;
+          current_operation = Some((range, file));
         }
       }
-      Ok((position.clone(), total_bytes))
-    });
+      let done = match (bytes.len(), &mut current_operation) {
+        (0, _) => break,
+        (_, &mut None) => break,
+        (_, &mut Some((ref range, ref mut file))) => {
+          if range.start > pos {
+            let ignore_len = cmp::min(bytes.len() as u64, range.start - pos) as usize;
+            bytes = &bytes[ignore_len..];
+          }
+          let remaining = (range.end - pos) as usize;
+          let cur_len = cmp::min(bytes.len(), remaining);
+          let cur_bytes = &bytes[0..cur_len];
+          file.write_all(cur_bytes)?;
+          bytes = &bytes[cur_len..];
+          {
+            let cur_len = cur_len as u64;
+            position.byte_idx += cur_len;
+            pos += cur_len as u64;
+            total_bytes += cur_len;
+          }
+          remaining == cur_len
+        }
+      };
+
+      if done {
+        position.package_idx += 1;
+        position.byte_idx = 0;
+        current_operation = None;
+      }
+    }
+    Ok((position.clone(), total_bytes))
+  });
 
   let done_stream = future::lazy(|| {
     debug!("end download");
     Ok(stream::empty())
-  }).flatten_stream();
+  })
+  .flatten_stream();
 
   Box::new(s.chain(done_stream))
 }

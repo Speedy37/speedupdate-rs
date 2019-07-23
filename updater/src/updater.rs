@@ -1,9 +1,14 @@
-use apply::{apply_package, ApplyError, ApplyStream};
-use download::download_package;
+use crate::apply::{apply_package, ApplyError, ApplyStream};
+use crate::download::download_package;
+use crate::operation::Operation;
+use crate::progression::{GlobalProgression, Progression};
+use crate::repository::{Error as RepositoryError, RemoteRepository};
+use crate::storage;
+use crate::storage::{v1, Package};
+use crate::workspace::{
+  CheckPackageMetadata, State, StateUpdating, UpdatePosition, Workspace, WorkspaceFileManager,
+};
 use futures::{future, stream, Async, Future, Poll, Stream};
-use operation::Operation;
-use progression::{GlobalProgression, Progression};
-use repository::{Error as RepositoryError, RemoteRepository};
 use serde_json;
 use std::collections::HashSet;
 use std::fmt;
@@ -12,10 +17,6 @@ use std::io;
 use std::mem;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
-use storage;
-use storage::{Package, v1};
-use workspace::{CheckPackageMetadata, State, StateUpdating, UpdatePosition, Workspace,
-                WorkspaceFileManager};
 
 #[derive(Debug)]
 pub enum Error {
@@ -83,7 +84,8 @@ impl<'a> ProgressionStream<'a> {
       package_name,
       download_operations,
       available.clone(),
-    ).fuse();
+    )
+    .fuse();
 
     Ok(ProgressionStream {
       state,
@@ -223,7 +225,8 @@ where
     } else {
       Ok(Box::new(stream::empty()))
     }
-  }).flatten_stream();
+  })
+  .flatten_stream();
 
   let write_state = Rc::new(RefCell::new(move || -> Result<(), Error> {
     let state = &*shared_state_s.borrow();
@@ -248,13 +251,13 @@ where
       if state.failures.len() == 0 {
         info!("update to {} succeeded", goal_version);
         Ok(stream::empty())
-      }
-      else  {
+      } else {
         error!("update to {} failed", goal_version);
         Err(Error::RecoveryFailed)
       }
     },
-  ).flatten_stream();
+  )
+  .flatten_stream();
 
   let mut last_write = Instant::now();
   let final_stream = normal_stream
@@ -398,7 +401,8 @@ where
           repository,
           package_metadata.package_data_name(),
           operations,
-        ).map(|s| {
+        )
+        .map(|s| {
           s.and_then(move |res| Ok(Some(res)))
             .chain(stream::once(Ok(None)))
         })

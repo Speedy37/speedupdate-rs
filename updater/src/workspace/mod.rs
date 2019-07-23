@@ -1,9 +1,9 @@
-use std::io;
-use std::fs;
-use std::path::PathBuf;
-use std::path::Path;
-use storage::v1;
+use crate::storage::v1;
 use serde_json;
+use std::fs;
+use std::io;
+use std::path::Path;
+use std::path::PathBuf;
 
 #[derive(Clone)]
 pub struct WorkspaceFileManager {
@@ -121,13 +121,15 @@ impl Workspace {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "version")]
 pub enum WorkspaceData {
-  #[serde(rename = "1")] V1 { state: State },
+  #[serde(rename = "1")]
+  V1 { state: State },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "version")]
 pub enum CheckPackageMetadata {
-  #[serde(rename = "1")] V1 { operations: Vec<v1::Operation> },
+  #[serde(rename = "1")]
+  V1 { operations: Vec<v1::Operation> },
 }
 
 #[derive(Serialize, Deserialize, Clone)]

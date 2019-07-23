@@ -1,15 +1,15 @@
+use crate::operation::{self, check_permission, FinalWriter};
+use crate::storage;
+use crate::updater::UpdateOptions;
+use crate::workspace::WorkspaceFileManager;
+use crate::BUFFER_SIZE;
 use brotli::DecompressorWriter;
-use operation::{self, check_permission, FinalWriter};
 use std::fs;
 use std::fs::File;
 use std::io;
 use std::io::{Read, Seek, Write};
 use std::ops::Range;
-use storage;
-use updater::UpdateOptions;
 use vcdiff_rs::{DecoderState, VCDiffDecoder};
-use workspace::WorkspaceFileManager;
-use BUFFER_SIZE;
 
 mod u64_str {
   use serde::{self, Deserialize, Deserializer, Serializer};
@@ -311,7 +311,8 @@ impl operation::Operation for Operation {
             local_size,
             decode_sha1_digest(local_sha1)?,
             exe,
-          ).map(|_| None)
+          )
+          .map(|_| None)
         } else {
           Ok(None)
         }

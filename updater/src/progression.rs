@@ -1,6 +1,6 @@
+use std::collections::VecDeque;
 use std::ops::{Add, AddAssign, Range, Sub, SubAssign};
 use std::time::{Duration, Instant};
-use std::collections::VecDeque;
 
 #[derive(Debug)]
 pub struct TimedProgression {

@@ -1,15 +1,15 @@
 pub mod https;
 pub mod local;
 
-use storage;
-use std::fmt;
-use futures::{Future, Stream};
-use hyper::StatusCode;
-use hyper::error::Error as HyperError;
-use serde_json::error::Error as JsonError;
-use std::ops::Range;
-use std::io;
+use crate::storage;
 use bytes::Bytes;
+use futures::{Future, Stream};
+use hyper::error::Error as HyperError;
+use hyper::StatusCode;
+use serde_json::error::Error as JsonError;
+use std::fmt;
+use std::io;
+use std::ops::Range;
 
 #[derive(Debug)]
 pub enum Error {

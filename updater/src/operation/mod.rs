@@ -1,3 +1,6 @@
+use crate::updater::UpdateOptions;
+use crate::workspace::WorkspaceFileManager;
+use crate::BUFFER_SIZE;
 use sha1::Sha1;
 use std::cell::RefCell;
 use std::fs;
@@ -6,9 +9,6 @@ use std::io::Read;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use updater::UpdateOptions;
-use workspace::WorkspaceFileManager;
-use BUFFER_SIZE;
 
 pub struct FinalWriterStats {
   pub sha1: Sha1,
