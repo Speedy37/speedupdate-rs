@@ -24,8 +24,8 @@ mod u64_str {
   where
     D: Deserializer<'de>,
   {
-    let s = String::deserialize(deserializer)?;
-    u64::from_str_radix(&s, 10).map_err(serde::de::Error::custom)
+    let s = <&str>::deserialize(deserializer)?;
+    u64::from_str_radix(s, 10).map_err(serde::de::Error::custom)
   }
 }
 
