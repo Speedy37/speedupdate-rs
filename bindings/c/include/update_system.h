@@ -80,6 +80,6 @@ typedef struct {
 extern uint8_t c_copy_workspace(
   const char* workspace_from,
   const char* workspace_dest,
-  uint8_t (*progress_callback)(const char *err, const void *CCopyProgression, void*),
+  uint8_t (*progress_callback)(const char *err, const CCopyProgression* progression, void*),
   void *data
 );
