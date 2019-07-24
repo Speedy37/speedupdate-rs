@@ -80,5 +80,6 @@ where
         }
       })
     });
-  work.wait()
+  let mut rt = tokio::runtime::current_thread::Runtime::new().unwrap();
+  rt.block_on(work)
 }

@@ -104,13 +104,16 @@ pub extern "C" fn c_version_info(
         }))
       };
       let versions = repository.versions();
-      (version, versions)
-        .into_future()
-        .map(|(version, versions)| match versions {
-          Versions::V1 { versions } => versions.into_iter().find(|v| v.revision == version),
-        })
-        .map_err(Error::RemoteRepository)
-        .wait()
+
+      let mut rt = tokio::runtime::current_thread::Runtime::new().unwrap();
+      rt.block_on(
+        (version, versions)
+          .into_future()
+          .map(|(version, versions)| match versions {
+            Versions::V1 { versions } => versions.into_iter().find(|v| v.revision == version),
+          })
+          .map_err(Error::RemoteRepository),
+      )
     });
   match res {
     Ok(Some(version)) => {
