@@ -1,0 +1,63 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema",
+    "type": "object",
+    "title": "Repository current version",
+    "description": "Contains the repository current version and the associated informations.",
+    "examples": [
+        {
+            "version": "1",
+            "current": {
+                "revision": "v2.0",
+                "description": "v2.0 is always better than v1.0 because reasons..."
+            }
+        }
+    ],
+    "required": [
+        "version",
+        "current"
+    ],
+    "properties": {
+        "version": {
+            "$id": "#/properties/version",
+            "type": "string",
+            "title": "This file format version",
+            "examples": [
+                "1"
+            ]
+        },
+        "current": {
+            "$id": "#/properties/current",
+            "type": "object",
+            "title": "Repository current version",
+            "examples": [
+                {
+                    "revision": "v2.0",
+                    "description": "v2.0 is always better than v1.0 because reasons..."
+                }
+            ],
+            "required": [
+                "revision",
+                "description"
+            ],
+            "properties": {
+                "revision": {
+                    "$id": "#/properties/current/properties/revision",
+                    "type": "string",
+                    "pattern": "[A-Za-z0-9_.-]+",
+                    "examples": [
+                        "v2.0"
+                    ]
+                },
+                "description": {
+                    "$id": "#/properties/current/properties/description",
+                    "type": "string",
+                    "examples": [
+                        "v2.0 is always better than v1.0 because reasons..."
+                    ]
+                }
+            },
+            "additionalProperties": true
+        }
+    },
+    "additionalProperties": true
+}

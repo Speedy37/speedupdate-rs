@@ -1,4 +1,2 @@
 [workspace]
-members = ["updater",
-           "bin/repository",
-           "bindings/c"]
+members = ["lib", "cli/workspace", "cli/repository", "bindings/c"]

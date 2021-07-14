@@ -1,0 +1,109 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema",
+    "type": "object",
+    "examples": [
+        {
+            "version": "1",
+            "packages": [
+                {
+                    "from": "",
+                    "to": "v0.1",
+                    "size": "17034889"
+                },
+                {
+                    "from": "v0.1",
+                    "to": "v0.2",
+                    "size": "1034889"
+                },
+                {
+                    "from": "",
+                    "to": "v0.2",
+                    "size": "18123322"
+                }
+            ]
+        }
+    ],
+    "required": [
+        "version",
+        "packages"
+    ],
+    "properties": {
+        "version": {
+            "$id": "#/properties/version",
+            "type": "string",
+            "examples": [
+                "1"
+            ]
+        },
+        "packages": {
+            "$id": "#/properties/packages",
+            "type": "array",
+            "examples": [
+                [
+                    {
+                        "from": "",
+                        "to": "v0.1",
+                        "size": "17034889"
+                    },
+                    {
+                        "from": "v0.1",
+                        "to": "v0.2",
+                        "size": "1034889"
+                    }
+                ]
+            ],
+            "additionalItems": true,
+            "items": {
+                "$id": "#/properties/packages/items",
+                "anyOf": [
+                    {
+                        "$id": "#/properties/packages/items/anyOf/0",
+                        "type": "object",
+                        "examples": [
+                            {
+                                "from": "",
+                                "to": "v0.1",
+                                "size": "17034889"
+                            }
+                        ],
+                        "required": [
+                            "from",
+                            "to",
+                            "size"
+                        ],
+                        "properties": {
+                            "from": {
+                                "$id": "#/properties/packages/items/anyOf/0/properties/from",
+                                "type": "string",
+                                "pattern": "[A-Za-z0-9_.-]*",
+                                "examples": [
+                                    "",
+                                    "v0.1"
+                                ]
+                            },
+                            "to": {
+                                "$id": "#/properties/packages/items/anyOf/0/properties/to",
+                                "type": "string",
+                                "pattern": "[A-Za-z0-9_.-]+",
+                                "examples": [
+                                    "v0.1",
+                                    "v0.2"
+                                ]
+                            },
+                            "size": {
+                                "$id": "#/properties/packages/items/anyOf/0/properties/size",
+                                "type": "string",
+                                "pattern": "[0-9]+",
+                                "examples": [
+                                    "17034889"
+                                ]
+                            }
+                        },
+                        "additionalProperties": true
+                    }
+                ]
+            }
+        }
+    },
+    "additionalProperties": true
+}

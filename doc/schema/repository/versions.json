@@ -1,0 +1,88 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema",
+    "type": "object",
+    "examples": [
+        {
+            "version": "1",
+            "versions": [
+                {
+                    "revision": "v0.1",
+                    "description": "First version 🔥"
+                },
+                {
+                    "revision": "v0.2",
+                    "description": "Second version 🚀"
+                }
+            ]
+        }
+    ],
+    "required": [
+        "version",
+        "versions"
+    ],
+    "properties": {
+        "version": {
+            "$id": "#/properties/version",
+            "type": "string",
+            "title": "This file format version",
+            "examples": [
+                "1"
+            ]
+        },
+        "versions": {
+            "$id": "#/properties/versions",
+            "type": "array",
+            "examples": [
+                [
+                    {
+                        "revision": "v0.1",
+                        "description": "First version 🔥"
+                    },
+                    {
+                        "revision": "v0.2",
+                        "description": "Second version 🚀"
+                    }
+                ]
+            ],
+            "additionalItems": true,
+            "items": {
+                "$id": "#/properties/versions/items",
+                "anyOf": [
+                    {
+                        "$id": "#/properties/versions/items/anyOf/0",
+                        "type": "object",
+                        "examples": [
+                            {
+                                "revision": "v0.1",
+                                "description": "First version 🔥"
+                            }
+                        ],
+                        "required": [
+                            "revision",
+                            "description"
+                        ],
+                        "properties": {
+                            "revision": {
+                                "$id": "#/properties/versions/items/anyOf/0/properties/revision",
+                                "type": "string",
+                                "pattern": "[A-Za-z0-9_.-]+",
+                                "examples": [
+                                    "v0.1"
+                                ]
+                            },
+                            "description": {
+                                "$id": "#/properties/versions/items/anyOf/0/properties/description",
+                                "type": "string",
+                                "examples": [
+                                    "First version 🔥"
+                                ]
+                            }
+                        },
+                        "additionalProperties": true
+                    }
+                ]
+            }
+        }
+    },
+    "additionalProperties": true
+}
