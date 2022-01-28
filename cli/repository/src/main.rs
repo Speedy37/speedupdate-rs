@@ -183,6 +183,7 @@ async fn main() {
 
     match matches.subcommand() {
         ("status", Some(matches)) => do_status(matches, &mut repository).await,
+        ("init", Some(matches)) => do_init(matches, &mut repository).await,
         ("current_version", Some(matches)) => do_current_version(matches, &mut repository).await,
         ("set_current_version", Some(matches)) => {
             do_set_current_version(matches, &mut repository).await
@@ -232,6 +233,11 @@ async fn do_status(_matches: &ArgMatches<'_>, repository: &mut Repository) {
     println!("packages: {}", packages.iter().count());
     let size = Byte::from_bytes(packages.iter().map(|p| p.size()).sum::<u64>().into());
     println!("size: {}", size);
+}
+
+async fn do_init(_matches: &ArgMatches<'_>, repository: &mut Repository) {
+    try_(repository.init(), "initialize repository");
+    println!("repository initialized !");
 }
 
 async fn do_current_version(_matches: &ArgMatches<'_>, repository: &mut Repository) {
