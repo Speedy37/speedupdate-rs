@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::fmt::Display;
 use std::io::{Read, Write};
 use std::ops::Deref;
@@ -343,8 +342,11 @@ async fn do_log(matches: &ArgMatches<'_>, repository: &mut Repository) {
     }
 }
 
-fn op_file_name(op: Option<&dyn Operation>) -> Cow<'_, str> {
-    op.and_then(|op| Path::new(op.path().deref()).file_name()).unwrap_or_default().to_string_lossy()
+fn op_file_name(op: Option<&dyn Operation>) -> String {
+    op.and_then(|op| Path::new(op.path().deref()).file_name())
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned()
 }
 
 async fn do_build_package(matches: &ArgMatches<'_>, repository: &mut Repository) {
@@ -403,7 +405,7 @@ async fn do_build_package(matches: &ArgMatches<'_>, repository: &mut Repository)
         let res = if matches.is_present("no_progress") {
             update_stream.try_for_each(|_state| future::ready(Ok(()))).await
         } else {
-            let draw_target = ProgressDrawTarget::to_term(Term::buffered_stdout(), 8);
+            let draw_target = ProgressDrawTarget::term(Term::buffered_stdout(), 8);
             let m = MultiProgress::with_draw_target(draw_target);
             const DL_TPL: &str =
             "Download [{wide_bar:cyan/blue}] {bytes:>8}/{total_bytes:8} ({bytes_per_sec:>10}, {eta:4}) {msg:32}";
@@ -440,19 +442,19 @@ async fn do_build_package(matches: &ArgMatches<'_>, repository: &mut Repository)
                     let progress = state.histogram.progress();
                     dl_bytes.set_position(progress.downloaded_bytes);
                     dl_bytes.set_length(state.download_bytes);
-                    dl_bytes.set_message(&op_file_name(
+                    dl_bytes.set_message(op_file_name(
                         state.current_step_operation(state.downloading_operation_idx),
                     ));
 
                     apply_input_bytes.set_position(progress.applied_input_bytes);
                     apply_input_bytes.set_length(state.apply_input_bytes);
-                    apply_input_bytes.set_message(&op_file_name(
+                    apply_input_bytes.set_message(op_file_name(
                         state.current_step_operation(state.applying_operation_idx),
                     ));
 
                     apply_output_bytes.set_position(progress.applied_output_bytes);
                     apply_output_bytes.set_length(state.apply_output_bytes);
-                    apply_output_bytes.set_message(&format!("{:?}", state.stage));
+                    apply_output_bytes.set_message(format!("{:?}", state.stage));
 
                     future::ready(Ok(()))
                 })
@@ -489,7 +491,7 @@ async fn do_build_package(matches: &ArgMatches<'_>, repository: &mut Repository)
     let res = if matches.is_present("no_progress") {
         build_stream.try_for_each(|_state| future::ready(Ok(()))).await
     } else {
-        let draw_target = ProgressDrawTarget::to_term(Term::buffered_stdout(), 8);
+        let draw_target = ProgressDrawTarget::term(Term::buffered_stdout(), 8);
         let m = MultiProgress::with_draw_target(draw_target);
         let sty = ProgressStyle::default_bar().progress_chars("##-");
         const TPL: &str =
@@ -520,7 +522,7 @@ async fn do_build_package(matches: &ArgMatches<'_>, repository: &mut Repository)
                 for (worker, bar) in state.workers.iter().zip(bars.iter_mut()) {
                     bar.set_position(worker.processed_bytes);
                     bar.set_length(worker.process_bytes);
-                    bar.set_message(&*worker.task_name);
+                    bar.set_message(worker.task_name.to_string());
                 }
 
                 future::ready(Ok(()))

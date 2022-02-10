@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::io::Write;
 use std::ops::Deref;
 use std::path::Path;
@@ -313,7 +312,7 @@ async fn do_update(
 
         stream.try_for_each(|_state| future::ready(Ok(()))).await
     } else {
-        let draw_target = ProgressDrawTarget::to_term(Term::buffered_stdout(), 8);
+        let draw_target = ProgressDrawTarget::term(Term::buffered_stdout(), 8);
         let m = MultiProgress::with_draw_target(draw_target);
         const DL_TPL: &str =
         "Download [{wide_bar:cyan/blue}] {bytes:>8}/{total_bytes:8} ({bytes_per_sec:>10}, {eta:4}) {msg:32}";
@@ -350,19 +349,19 @@ async fn do_update(
                 let progress = state.histogram.progress();
                 dl_bytes.set_position(progress.downloaded_bytes);
                 dl_bytes.set_length(state.download_bytes);
-                dl_bytes.set_message(&op_file_name(
+                dl_bytes.set_message(op_file_name(
                     state.current_step_operation(state.downloading_operation_idx),
                 ));
 
                 apply_input_bytes.set_position(progress.applied_input_bytes);
                 apply_input_bytes.set_length(state.apply_input_bytes);
-                apply_input_bytes.set_message(&op_file_name(
+                apply_input_bytes.set_message(op_file_name(
                     state.current_step_operation(state.applying_operation_idx),
                 ));
 
                 apply_output_bytes.set_position(progress.applied_output_bytes);
                 apply_output_bytes.set_length(state.apply_output_bytes);
-                apply_output_bytes.set_message(&format!("{:?}", state.stage));
+                apply_output_bytes.set_message(format!("{:?}", state.stage));
 
                 future::ready(Ok(()))
             })
@@ -383,8 +382,11 @@ async fn do_update(
     println!("UP to DATE");
 }
 
-fn op_file_name(op: Option<&dyn Operation>) -> Cow<'_, str> {
-    op.and_then(|op| Path::new(op.path().deref()).file_name()).unwrap_or_default().to_string_lossy()
+fn op_file_name(op: Option<&dyn Operation>) -> String {
+    op.and_then(|op| Path::new(op.path().deref()).file_name())
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned()
 }
 
 async fn do_log(matches: &ArgMatches<'_>, workspace: &mut Workspace) {
@@ -459,7 +461,7 @@ async fn do_check(matches: &ArgMatches<'_>, workspace: &mut Workspace) {
 
         stream.try_for_each(|_state| future::ready(Ok(()))).await
     } else {
-        let draw_target = ProgressDrawTarget::to_term(Term::buffered_stdout(), 8);
+        let draw_target = ProgressDrawTarget::term(Term::buffered_stdout(), 8);
         let m = MultiProgress::with_draw_target(draw_target);
         const CHECK_TPL: &str =
         "Check    [{wide_bar:cyan/blue}] {bytes:>8}/{total_bytes:8} ({bytes_per_sec:>10}, {eta:4}) {msg:32}";
@@ -482,7 +484,7 @@ async fn do_check(matches: &ArgMatches<'_>, workspace: &mut Workspace) {
                 let progress = state.histogram.progress();
                 check_bytes.set_position(progress.checked_bytes);
                 check_bytes.set_length(state.check_bytes);
-                check_bytes.set_message(&op_file_name(state.current_operation()));
+                check_bytes.set_message(op_file_name(state.current_operation()));
 
                 future::ready(Ok(()))
             })
