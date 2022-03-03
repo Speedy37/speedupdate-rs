@@ -111,6 +111,9 @@ async fn main() {
         (@subcommand status =>
             (about: "Show the repository status (current version & stats")
         )
+	(@subcommand init =>
+            (about: "Initialize repository")
+        )
         (@subcommand current_version =>
             (about: "Show the repository current version")
         )
