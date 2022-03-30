@@ -145,7 +145,7 @@ impl Repository {
                 .collect(),
         };
         let packages = Packages::V1 { packages };
-        io::atomic_write_json(&self.dir.join(metadata::Versions::filename()), &packages)?;
+        io::atomic_write_json(&self.dir.join(metadata::Packages::filename()), &packages)?;
         Ok(())
     }
 
@@ -159,7 +159,7 @@ impl Repository {
             }
         };
         let packages = Packages::V1 { packages };
-        io::atomic_write_json(&self.dir.join(metadata::Versions::filename()), &packages)?;
+        io::atomic_write_json(&self.dir.join(metadata::Packages::filename()), &packages)?;
         Ok(())
     }
 }
